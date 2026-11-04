@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+
+# 模型权重（体积大，需要自行下载）
+server/weights/
+*.pt
+*.onnx
+*.engine
+
+# 运行期产物
+server/output/
+server/videos/
+output/
+videos/
+*.log
+streamlit.log
+
+# 数据与备份：含真实统计数据，不进仓库
+恢复数据.html
+*.backup-*.html
+*.backup-*.py
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>模型监看 · 调识别线与区域</title>
+<style>
+  :root{
+    --bg:#f5f7fb;--card:#fff;--line:#e3e8f0;--text:#1d2433;--muted:#6b7688;--muted-2:#98a2b3;
+    --accent:#2f6feb;--accent-d:#1f4fb8;--accent-soft:#eef3fd;--ok:#12894a;--warn:#b26a06;--danger:#c62828;
+    --stage:#0f1420;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .app{display:flex;flex-direction:column;height:100vh}
+  header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);flex:none}
+  header h1{font-size:15px;margin:0;font-weight:650}
+  header .tag{font-size:11.5px;color:var(--muted);background:#f2f5fa;border:1px solid #e8eef8;padding:2px 7px;border-radius:6px}
+  header .grow{flex:1}
+  .dot{width:8px;height:8px;border-radius:50%;background:#c3cbd8;display:inline-block;margin-right:5px}
+  .dot.ok{background:#1aa561}.dot.bad{background:#e05555}.dot.wait{background:#e0a355}
+  main{flex:1;display:flex;min-height:0}
+  .stage{flex:1;min-width:0;background:var(--stage);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  .stage.drawing,.stage.drawing #frameBox{cursor:crosshair}
+  #frameBox{position:relative;line-height:0;max-width:100%;max-height:100%;display:none}
+  #frameBox img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:fill;
+    -webkit-user-select:none;user-select:none;-webkit-user-drag:none}
+  #imgA,#imgB{opacity:0;transition:opacity .06s linear;pointer-events:none}
+  #imgA.on,#imgB.on{opacity:1}
+  .empty{color:#8a94a6;font-size:13px;text-align:center;padding:20px;line-height:1.9}
+  /* 覆盖层 */
+  #line{position:absolute;left:0;right:0;height:0;border-top:2px solid #ff3b30;cursor:ns-resize;z-index:5}
+  #line::before{content:'';position:absolute;left:0;right:0;top:-7px;height:16px}
+  #line .tag{position:absolute;right:6px;top:-22px;background:#ff3b30;color:#fff;font-size:11px;
+    padding:1px 6px;border-radius:5px;white-space:nowrap}
+  #roi{position:absolute;border:2px dashed #ffd84d;background:rgba(255,216,77,.08);cursor:move;z-index:4}  #roi .h{position:absolute;width:10px;height:10px;background:#ffd84d;border:1px solid #8a6a00;border-radius:2px}
+  #roi .h[data-h="nw"]{left:-6px;top:-6px;cursor:nwse-resize}
+  #roi .h[data-h="ne"]{right:-6px;top:-6px;cursor:nesw-resize}
+  #roi .h[data-h="sw"]{left:-6px;bottom:-6px;cursor:nesw-resize}
+  #roi .h[data-h="se"]{right:-6px;bottom:-6px;cursor:nwse-resize}
+  .badge{position:absolute;left:12px;top:12px;background:rgba(15,20,32,.72);color:#dfe6f3;font-size:12px;
+    padding:4px 10px;border-radius:999px;z-index:9;backdrop-filter:blur(4px)}
+  .badge b{color:#7fd1a0}
+  /* 侧栏 */
+  aside{width:372px;flex:none;background:var(--bg);border-left:1px solid var(--line);overflow:auto;padding:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .card h2{font-size:12.5px;margin:0 0 9px;color:var(--muted);font-weight:600;letter-spacing:.3px}
+  .row{display:flex;gap:6px;align-items:center}
+  .row+.row{margin-top:7px}
+  .grow{flex:1;min-width:0}
+  select,input[type=text],input[type=number]{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:7px;
+    font-size:12.5px;font-family:inherit;background:#fff;color:var(--text)}
+  .btn{border:1px solid var(--line);background:#fff;color:var(--text);padding:6px 10px;border-radius:7px;
+    font-size:12.5px;font-family:inherit;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:#f7f9fd}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#2560d4}
+  .btn.danger{border-color:#f0c4c4;color:var(--danger)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.on{background:var(--accent-soft);border-color:#bed2f7;color:var(--accent-d);font-weight:600}
+  .chips{display:flex;gap:5px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:#fff;color:var(--muted);font-size:12px;padding:4px 9px;
+    border-radius:6px;cursor:pointer;font-family:inherit}
+  .chip.on{background:var(--accent-soft);border-color:#bed2f7;color:var(--accent-d);font-weight:600}
+  .note{font-size:11.5px;color:var(--muted-2);margin:7px 0 0;line-height:1.6}
+  .bar{height:6px;background:#eef1f6;border-radius:4px;overflow:hidden;margin:9px 0 6px}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s linear}
+  .status{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;min-height:17px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:4px 5px;border-bottom:1px solid #f0f3f8;text-align:left}
+  th{color:var(--muted-2);font-weight:500;font-size:11.5px}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  tr.total td{border-bottom:none;font-weight:650;padding-top:6px}
+  .evs{max-height:186px;overflow:auto;margin:0 -4px}
+  .ev{display:flex;gap:6px;font-size:12px;padding:3px 4px;border-bottom:1px dashed #f0f3f8}
+  .ev b{color:var(--accent-d);font-variant-numeric:tabular-nums;font-weight:600}
+  .ev .cat{color:var(--text)}
+  .ev .n{margin-left:auto;color:var(--ok);font-weight:600}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:rgba(24,32,48,.92);color:#fff;
+    font-size:12.5px;padding:8px 14px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity .18s;z-index:99}
+  .toast.on{opacity:1}
+  .hint-err{background:#fdeeee;border:1px solid #f3cfcf;color:#a52525;font-size:12px;padding:8px 10px;border-radius:7px;margin-top:8px;display:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>模型监看</h1>
+    <span class="tag">调识别线 / 识别区域</span>
+    <span class="grow"></span>
+    <button class="btn" id="btnFull" style="font-size:12px;padding:4px 9px" title="画面占满屏幕，Esc 退出">全屏画面</button>
+    <span style="font-size:12px;color:var(--muted)"><i class="dot" id="srvDot"></i><span id="srvText">连接中…</span></span>
+  </header>
+
+  <main>
+    <section class="stage" id="stage">
+      <div id="frameBox">
+        <img id="imgA" alt="">
+        <img id="imgB" alt="">
+        <div id="roi" hidden>
+          <i class="h" data-h="nw"></i><i class="h" data-h="ne"></i>
+          <i class="h" data-h="sw"></i><i class="h" data-h="se"></i>
+        </div>
+        <div id="line" hidden><span class="tag" id="lineTag">识别线 65%</span></div>
+      </div>
+      <div class="empty" id="empty">从右侧选一个视频，或改目录后点「扫描」<br>画面里可以直接拖红线、拖框定识别区域</div>
+      <div class="badge" id="badge">待机</div>
+    </section>
+
+    <aside>
+      <section class="card">
+        <h2>视频</h2>
+        <div class="row">
+          <input type="text" id="dir" value="D:\ra3" title="视频所在文件夹">
+          <button class="btn" id="btnScan">扫描</button>
+        </div>
+        <div class="row">
+          <select id="fileSel"><option value="">— 先点扫描 —</option></select>
+        </div>
+        <p class="note" id="fileInfo">视频不用上传，服务端直接读本机文件，几 G 也不慢。</p>
+        <div class="hint-err" id="errBox"></div>
+      </section>
+
+      <section class="card">
+        <h2>识别线与识别区域</h2>
+        <div class="row">
+          <span style="font-size:12px;color:var(--muted)">线</span>
+          <input type="range" id="lineRange" class="grow" min="5" max="95" step="1" value="65">
+          <span id="lineVal" style="font-size:12px;font-variant-numeric:tabular-nums;width:34px;text-align:right">65%</span>
+        </div>
+        <div class="row">
+          <label style="font-size:12.5px;display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="checkbox" id="chkRoi"> 限定识别区域
+          </label>
+          <span class="grow"></span>
+          <button class="btn" id="btnRoiDraw">框选</button>
+          <button class="btn" id="btnRoiAll">全画面</button>
+        </div>
+        <p class="note">画面上直接拖红线；勾了区域后按住画面拖一个框，只有框内出现的新车才开始跟踪。车辆中心越过红线才算一辆。</p>
+      </section>
+
+      <section class="card">
+        <h2>试算范围</h2>
+        <div class="row">
+          <span style="font-size:12px;color:var(--muted)">起点</span>
+          <input type="text" id="startInput" class="grow" value="00:00" style="width:70px">
+          <button class="btn" id="btnMinus5">−5s</button>
+          <button class="btn" id="btnPlus5">+5s</button>
+        </div>
+        <div class="row">
+          <button class="btn grow" id="btnStill">取这一帧</button>
+          <span style="font-size:11.5px;color:var(--muted-2)" id="durInfo"></span>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <span style="font-size:12px;color:var(--muted);width:34px">时长</span>
+          <div class="chips grow" id="clipChips">
+            <button class="chip" data-clip="15">15 秒</button>
+            <button class="chip on" data-clip="30">30 秒</button>
+            <button class="chip" data-clip="60">60 秒</button>
+            <button class="chip" data-clip="0">全片</button>
+          </div>
+        </div>
+        <div class="row">
+          <span style="font-size:12px;color:var(--muted);width:34px">抽帧</span>
+          <div class="chips grow" id="speedChips">
+            <button class="chip" data-speed="1">1×</button>
+            <button class="chip on" data-speed="2">2×</button>
+            <button class="chip" data-speed="3">3×</button>
+            <button class="chip" data-speed="5">5×</button>
+            <button class="chip" data-speed="8">8×</button>
+          </div>
+        </div>
+        <div class="row">
+          <span style="font-size:12px;color:var(--muted);width:34px" title="推理分辨率，越大远处小车越不容易漏，但更慢">尺寸</span>
+          <div class="chips grow" id="sizeChips">
+            <button class="chip on" data-size="640">640</button>
+            <button class="chip" data-size="960">960</button>
+            <button class="chip" data-size="1280">1280</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary grow" id="btnStart">开始</button>
+          <button class="btn danger" id="btnStop" disabled>停止</button>
+        </div>
+        <div class="bar"><i id="prog"></i></div>
+        <p class="status" id="status">未开始</p>
+      </section>
+
+      <section class="card">
+        <h2>实时统计 <span class="dot" id="liveDot"></span></h2>
+        <table>
+          <thead><tr><th>车型</th><th class="n">本段</th><th class="n">累计</th></tr></thead>
+          <tbody id="statBody"></tbody>
+        </table>
+        <div class="row" style="margin-top:9px">
+          <button class="btn grow" id="btnCopy">复制累计总表</button>
+          <button class="btn grow" id="btnCopySeg">复制本段</button>
+        </div>
+        <div class="row">
+          <button class="btn grow" id="btnSave">保存本页设置</button>
+          <button class="btn" id="btnReset" title="识别线回到 65%，区域回到全画面">复位</button>
+        </div>
+        <p class="note">复制出来是 7 个数字、制表符分隔、不带表头，直接粘进表格。本页设置存在自己名下，不动主页面。</p>
+      </section>
+
+      <section class="card">
+        <h2>过线明细 <span id="evCount" style="color:var(--muted-2);font-weight:400">0</span></h2>
+        <div class="evs" id="evs"><div class="note" style="margin:0">还没有车过线</div></div>
+      </section>
+    </aside>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var API = 'http://127.0.0.1:8502';
+  var CATS = ['其它小型客车', '其它大型客车', '公交车', '出租车', '小型货车', '大型货车', '摩托车'];
+
+  var S = {
+    src: '', name: '', duration: 0, vw: 0, vh: 0,
+    line: 65, roi: null, roiOn: false,
+    start: 0, clip: 30, speed: 2, imgsz: 640,
+    jobId: null, timer: null, ver: 0, front: 0, live: false, events: 0,
+    shotSeq: 0, curUrl: '', drawMode: false, lastTotals: null
+  };
+
+  function $(id) { return document.getElementById(id); }
+  var box = $('frameBox'), imgA = $('imgA'), imgB = $('imgB');
+  var roiEl = $('roi'), lineEl = $('line'), emptyEl = $('empty');
+
+  /* ---------------- 小工具 ---------------- */
+  function fmtT(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return h ? (h + ':' + p(m) + ':' + p(x)) : (p(m) + ':' + p(x));
+  }
+  function parseT(str) {
+    str = String(str || '').trim();
+    if (!str) return 0;
+    var parts = str.split(':').map(function (x) { return parseFloat(x) || 0; });
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('on');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('on'); }, 2200);
+  }
+  function err(msg) {
+    var e = $('errBox');
+    if (!msg) { e.style.display = 'none'; e.textContent = ''; return; }
+    e.textContent = msg; e.style.display = 'block';
+  }
+  function badge(text, kind) {
+    var b = $('badge');
+    b.innerHTML = text;
+    if (kind) b.style.color = kind;
+  }
+  function srv(ok, text) {
+    $('srvDot').className = 'dot ' + (ok ? 'ok' : 'bad');
+    $('srvText').textContent = text;
+  }
+
+  /* ---------------- 画面 ---------------- */
+  function fitFrame(w, h) {
+    var st = $('stage').getBoundingClientRect();
+    var maxW = Math.max(200, st.width - 26);
+    var maxH = Math.max(140, st.height - 26);
+    var k = Math.min(maxW / w, maxH / h);
+    box.style.width = Math.round(w * k) + 'px';
+    box.style.height = Math.round(h * k) + 'px';
+  }
+
+  /* 画面用 fetch 取成 blob 再显示：预览面板 / 内嵌环境常限制 <img> 直接加载本机端口，
+     走 blob 一律能出图（file:// 双击打开也照常）。 */
+  var shotErr = 0;
+  function showShot(url) {
+    var seq = ++S.shotSeq;
+    fetch(url, { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob();
+      })
+      .then(function (b) {
+        if (seq !== S.shotSeq) return;
+        var u = URL.createObjectURL(b);
+        var probe = new Image();
+        probe.onload = function () {
+          if (seq !== S.shotSeq) { URL.revokeObjectURL(u); return; }
+          var next = S.front === 0 ? imgB : imgA;
+          var cur = S.front === 0 ? imgA : imgB;
+          next.src = u;
+          next.classList.add('on');
+          cur.classList.remove('on');
+          S.front = 1 - S.front;
+          var old = S.curUrl;
+          S.curUrl = u;
+          if (old) setTimeout(function () { URL.revokeObjectURL(old); }, 1500);
+          emptyEl.style.display = 'none';
+          box.style.display = 'block';
+          shotErr = 0;
+        };
+        probe.onerror = function () { URL.revokeObjectURL(u); };
+        probe.src = u;
+      })
+      .catch(function (e) {
+        if (seq !== S.shotSeq) return;
+        shotErr++;
+        if (shotErr === 3 && !S.curUrl) {
+          emptyEl.style.display = '';
+          emptyEl.innerHTML = '画面取不到（' + e.message + '）<br>' +
+            '确认模型服务在跑：双击 D:\\车型识别\\启动模型服务.bat';
+          box.style.display = 'none';
+        }
+      });
+  }
+
+  function loadStill() {
+    if (!S.src) return;
+    showShot(API + '/still?src=' + encodeURIComponent(S.src) + '&t=' + S.start.toFixed(2) +
+      '&w=1280&_=' + Date.now());
+  }
+
+  /* ---------------- 覆盖层几何 ---------------- */
+  function layoutOverlay() {
+    lineEl.style.top = (S.line / 100 * 100) + '%';
+    lineEl.hidden = !S.src;
+    lineEl.style.display = S.live ? 'none' : 'block';
+    $('lineTag').textContent = '识别线 ' + S.line + '%';
+    /* 区域框跑的时候也留着 —— 调区域就靠对照它 */
+    var showRoi = !!(S.roi && S.roiOn);
+    roiEl.hidden = !showRoi;
+    roiEl.style.display = showRoi ? 'block' : 'none';
+    if (showRoi) {
+      roiEl.style.left = (S.roi.x * 100) + '%';
+      roiEl.style.top = (S.roi.y * 100) + '%';
+      roiEl.style.width = (S.roi.w * 100) + '%';
+      roiEl.style.height = (S.roi.h * 100) + '%';
+    }
+  }
+  function setLive(on) {
+    S.live = on;
+    layoutOverlay();
+  }
+  /* 相对「画面」的百分比；画面还没出来时退回整个 stage，这样没画面也能先框 */
+  function rel(e) {
+    var el = (box.offsetWidth && box.offsetHeight) ? box : stageEl;
+    var r = el.getBoundingClientRect();
+    return {
+      x: Math.min(1, Math.max(0, (e.clientX - r.left) / Math.max(1, r.width))),
+      y: Math.min(1, Math.max(0, (e.clientY - r.top) / Math.max(1, r.height)))
+    };
+  }
+
+  /* ---------------- 拖动：线 / 区域 ---------------- */
+  var drag = null;   // {kind:'line'|'draw'|'move'|'size', ...}
+  var stageEl = $('stage');
+
+  stageEl.addEventListener('pointerdown', function (e) {
+    if (S.live) return;
+    var p = rel(e);
+    var t = e.target;
+
+    if (t === lineEl || (t.parentNode === lineEl)) {
+      drag = { kind: 'line' };
+      stageEl.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+    if (t.dataset && t.dataset.h) {
+      drag = { kind: 'size', dir: t.dataset.h, start: p, base: { x: S.roi.x, y: S.roi.y, w: S.roi.w, h: S.roi.h } };
+      stageEl.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+    if (roiEl.contains(t)) {
+      drag = { kind: 'move', start: p, base: { x: S.roi.x, y: S.roi.y, w: S.roi.w, h: S.roi.h } };
+      stageEl.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+    if (S.drawMode) {
+      drag = { kind: 'draw', from: p };
+      S.roi = { x: p.x, y: p.y, w: 0.0001, h: 0.0001 };
+      S.roiOn = true;
+      $('chkRoi').checked = true;
+      layoutOverlay();
+      stageEl.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    }
+  });
+
+  stageEl.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    var p = rel(e);
+    if (drag.kind === 'line') {
+      S.line = Math.round(Math.min(95, Math.max(5, p.y * 100)));
+      $('lineRange').value = S.line;
+      $('lineVal').textContent = S.line + '%';
+      layoutOverlay();
+      return;
+    }
+    if (drag.kind === 'draw') {
+      var x = Math.min(drag.from.x, p.x), y = Math.min(drag.from.y, p.y);
+      S.roi = { x: x, y: y, w: Math.abs(p.x - drag.from.x), h: Math.abs(p.y - drag.from.y) };
+      layoutOverlay();
+      return;
+    }
+    if (drag.kind === 'move') {
+      var dx = p.x - drag.start.x, dy = p.y - drag.start.y;
+      S.roi.x = Math.min(1 - drag.base.w, Math.max(0, drag.base.x + dx));
+      S.roi.y = Math.min(1 - drag.base.h, Math.max(0, drag.base.y + dy));
+      layoutOverlay();
+      return;
+    }
+    if (drag.kind === 'size') {
+      var b = drag.base, k = drag.dir;
+      var x1 = b.x, y1 = b.y, x2 = b.x + b.w, y2 = b.y + b.h;
+      if (k.indexOf('w') >= 0) x1 = p.x;
+      if (k.indexOf('e') >= 0) x2 = p.x;
+      if (k.indexOf('n') >= 0) y1 = p.y;
+      if (k.indexOf('s') >= 0) y2 = p.y;
+      S.roi = {
+        x: Math.min(x1, x2), y: Math.min(y1, y2),
+        w: Math.max(0.02, Math.abs(x2 - x1)), h: Math.max(0.02, Math.abs(y2 - y1))
+      };
+      layoutOverlay();
+    }
+  });
+
+  stageEl.addEventListener('pointerup', function (e) {
+    if (drag && drag.kind === 'draw') {
+      if (S.roi && (S.roi.w < 0.02 || S.roi.h < 0.02)) S.roi = null;
+      S.drawMode = false;
+      $('btnRoiDraw').classList.remove('on');
+      stageEl.classList.remove('drawing');
+      layoutOverlay();
+      if (S.roi) {
+        toast('区域已设：宽 ' + Math.round(S.roi.w * 100) + '% × 高 ' + Math.round(S.roi.h * 100) + '%');
+      } else {
+        toast('框太小了，再拖一次');
+      }
+    }
+    if (drag) saveSettings();
+    drag = null;
+    try { stageEl.releasePointerCapture(e.pointerId); } catch (err) {}
+  });
+
+  /* ---------------- 控件 ---------------- */
+  $('lineRange').addEventListener('input', function (e) {
+    setLine(parseInt(e.target.value, 10) || 65);
+    saveSettings();
+  });
+
+  $('chkRoi').addEventListener('change', function (e) {
+    S.roiOn = e.target.checked;
+    if (S.roiOn && !S.roi) S.roi = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+    layoutOverlay();
+    saveSettings();
+  });
+
+  $('btnRoiDraw').addEventListener('click', function () {
+    if (S.live) { toast('识别正在跑，先点「停止」再框选'); return; }
+    if (!S.src) { toast('先在上面选一个视频'); return; }
+    S.drawMode = !S.drawMode;
+    $('btnRoiDraw').classList.toggle('on', S.drawMode);
+    stageEl.classList.toggle('drawing', S.drawMode);
+    if (S.drawMode) {
+      if (!S.curUrl) loadStill();
+      toast('在画面上按住拖一个框');
+    }
+  });
+
+  $('btnRoiAll').addEventListener('click', function () {
+    S.roi = { x: 0, y: 0, w: 1, h: 1 };
+    S.roiOn = false;
+    $('chkRoi').checked = false;
+    layoutOverlay();
+  });
+
+  $('startInput').addEventListener('change', function (e) {
+    var v = Math.max(0, parseT(e.target.value));
+    if (S.duration) v = Math.min(v, Math.max(0, S.duration - 1));
+    S.start = v;
+    e.target.value = fmtT(v);
+    loadStill();
+    saveSettings();
+  });
+
+  $('btnMinus5').addEventListener('click', function () { nudgeStart(-5); });
+  $('btnPlus5').addEventListener('click', function () { nudgeStart(5); });
+  $('btnStill').addEventListener('click', function () {
+    if (!S.src) return toast('先选视频');
+    loadStill();
+  });
+
+  $('clipChips').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-clip]');
+    if (!b) return;
+    setClip(parseInt(b.dataset.clip, 10) || 0);
+    saveSettings();
+  });
+
+  $('speedChips').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-speed]');
+    if (!b) return;
+    setSpeed(parseInt(b.dataset.speed, 10) || 2);
+    saveSettings();
+  });
+
+  $('sizeChips').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-size]');
+    if (!b) return;
+    setImg(parseInt(b.dataset.size, 10) || 640);
+    saveSettings();
+    toast('推理尺寸 ' + S.imgsz + '：越大远处小车越不漏，但更慢');
+  });
+
+  /* ---------------- 视频列表 ---------------- */
+  function scan() {
+    err('');
+    var dir = $('dir').value.trim();
+    fetch(API + '/videos?dir=' + encodeURIComponent(dir), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { err(d.error || '扫描失败'); return; }
+        var sel = $('fileSel');
+        sel.innerHTML = '';
+        var hit = '';
+        (d.items || []).forEach(function (it) {
+          var o = document.createElement('option');
+          o.value = it.path;
+          o.textContent = it.name + '  ·  ' + (it.size / 1073741824).toFixed(2) + ' GB';
+          sel.appendChild(o);
+          if (S.src && it.path === S.src) hit = it.path;
+        });
+        if (!(d.items || []).length) {
+          var o2 = document.createElement('option');
+          o2.value = '';
+          o2.textContent = '这个文件夹里没有视频';
+          sel.appendChild(o2);
+        }
+        if (hit) { sel.value = hit; pick(hit); }
+        else if (sel.value) pick(sel.value);
+        srv(true, '已连接');
+      })
+      .catch(function () { err('连不上模型服务，先双击 D:\\车型识别\\启动模型服务.bat'); srv(false, '未连接'); });
+  }
+
+  function pick(path) {
+    if (!path) return;
+    S.src = path;
+    S.name = path.split(/[\\/]/).pop();
+    layoutOverlay();
+    fetch(API + '/info?src=' + encodeURIComponent(path), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { err(d.error || '读不出视频信息'); return; }
+        S.duration = d.duration || 0;
+        $('durInfo').textContent = '共 ' + fmtT(S.duration) + ' · ' + d.width + '×' + d.height + ' · ' + d.fps + 'fps';
+        $('fileInfo').textContent = S.name;
+        S.start = Math.min(S.start, Math.max(0, S.duration - 1));
+        $('startInput').value = fmtT(S.start);
+        if (d.width && d.height) {
+          S.vw = d.width; S.vh = d.height;
+          fitFrame(d.width, d.height);
+        }
+        loadStill();
+      })
+      .catch(function () { err('读视频信息失败'); });
+    $('fileInfo').textContent = S.name;
+  }
+
+  $('btnScan').addEventListener('click', scan);
+  $('fileSel').addEventListener('change', function (e) { pick(e.target.value); });
+
+  /* ---------------- 跑任务 ---------------- */
+  function roiParam() {
+    var r = S.roi;
+    var x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
+    return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+      .map(function (p) { return p[0].toFixed(4) + ',' + p[1].toFixed(4); }).join(';');
+  }
+
+  function setRun(on) {
+    $('btnStart').disabled = on;
+    $('btnStop').disabled = !on;
+    $('btnScan').disabled = on;
+    $('fileSel').disabled = on;
+  }
+
+  function start() {
+    if (!S.src) return toast('先选一个视频');
+    if (S.jobId) return;
+    var q = new URLSearchParams();
+    q.set('src', S.src);
+    q.set('line', (S.line / 100).toFixed(3));
+    q.set('speed', String(S.speed));
+    q.set('seg', '5');
+    q.set('imgsz', String(S.imgsz || 640));
+    q.set('start', S.start.toFixed(2));
+    q.set('clip', String(S.clip || 0));
+    if (S.roiOn && S.roi && (S.roi.w < 0.999 || S.roi.h < 0.999)) q.set('roi', roiParam());
+
+    setRun(true);
+    S.events = [];
+    renderEvents([]);
+    badge('启动中…');
+    $('status').textContent = '正在让模型加载并定位到 ' + fmtT(S.start) + ' …';
+
+    fetch(API + '/jobs?' + q.toString(), { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.id) { setRun(false); badge('失败'); $('status').textContent = d.error || '启动失败'; return; }
+        S.jobId = d.id;
+        S.ver = 0;
+        setLive(true);
+        badge('模型实时输出');
+        poll();
+      })
+      .catch(function () {
+        setRun(false); badge('失败');
+        $('status').textContent = '连不上模型服务';
+      });
+  }
+
+  function poll() {
+    if (!S.jobId) return;
+    if (S.timer) clearTimeout(S.timer);
+    S.timer = setTimeout(function () {
+      fetch(API + '/jobs/' + S.jobId + '/live', { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          update(d);
+          if (d.done) { finish(d); return; }
+          poll();
+        })
+        .catch(function () { poll(); });
+    }, 260);
+  }
+
+  function update(d) {
+    renderStats(d);
+    var span = (d.clip && d.clip > 0) ? d.clip : Math.max(1, (d.duration || 1) - (d.start || 0));
+    var done = Math.max(0, (d.t || 0) - (d.start || 0));
+    var pct = Math.min(100, span ? done / span * 100 : 0);
+    $('prog').style.width = pct.toFixed(1) + '%';
+    $('status').textContent = fmtT(d.t || 0) + ' / ' + fmtT((d.start || 0) + span) +
+      '　·　' + (d.log || '');
+    $('liveDot').className = 'dot ' + (d.done ? '' : 'ok');
+    if (d.ver && d.ver !== S.ver) {
+      S.ver = d.ver;
+      showShot(API + '/jobs/' + S.jobId + '/frame?w=1280&v=' + d.ver);
+    }
+    if (d.events) renderEvents(d.events);
+  }
+
+  function finish(d) {
+    update(d);
+    S.jobId = null;
+    S.timer = null;
+    setRun(false);
+    setLive(false);
+    layoutOverlay();
+    var total = d.total || 0;
+    badge('完成 · 共 <b>' + total + '</b> 辆');
+    $('status').textContent = '已结束，用时 ' + (d.elapsed || 0) + ' 秒' +
+      (d.error ? '　错误：' + d.error : '');
+    toast('这一段跑完了：' + total + ' 辆');
+  }
+
+  $('btnStart').addEventListener('click', start);
+  function stopJob() {
+    if (!S.jobId) return;
+    fetch(API + '/jobs/' + S.jobId + '/stop', { method: 'POST' }).catch(function () {});
+    $('status').textContent = '正在停止…';
+  }
+  $('btnStop').addEventListener('click', stopJob);
+
+  /* ---------------- 表格 / 事件 ---------------- */
+  function renderStats(d) {
+    var counts = d.counts || {}, totals = d.totals || {};
+    if (d.totals) S.lastTotals = totals;
+    if (d.counts) S.lastCounts = counts;
+    var body = $('statBody');
+    var html = '';
+    var sumC = 0, sumT = 0;
+    CATS.forEach(function (c) {
+      var a = counts[c] || 0, b = totals[c] || 0;
+      sumC += a; sumT += b;
+      html += '<tr><td>' + c + '</td><td class="n">' + a + '</td><td class="n">' + b + '</td></tr>';
+    });
+    html += '<tr class="total"><td>合计</td><td class="n">' + sumC + '</td><td class="n">' + sumT + '</td></tr>';
+    body.innerHTML = html;
+  }
+
+  function renderEvents(events) {
+    var box2 = $('evs');
+    S.lastEvents = events || [];
+    $('evCount').textContent = (events || []).length;
+    if (!(events || []).length) {
+      box2.innerHTML = '<div class="note" style="margin:0">还没有车过线</div>';
+      return;
+    }
+    var html = '';
+    events.slice().reverse().forEach(function (e) {
+      html += '<div class="ev"><b>' + fmtT(e.t) + '</b><span class="cat">' + e.cat + '</span>' +
+        '<span class="n">+' + (e.n || 1) + '</span></div>';
+    });
+    box2.innerHTML = html;
+  }
+
+  /* ---------------- 复制 / 本页设置 ---------------- */
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+  }
+  function copyText(text, tip) {
+    var done = function () { toast(tip); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text); done(); });
+    } else {
+      legacyCopy(text);
+      done();
+    }
+  }
+  function catRow(map) {
+    return CATS.map(function (c) { return map[c] || 0; }).join('\t');
+  }
+
+  $('btnCopy').addEventListener('click', function () {
+    var t = catRow(S.lastTotals || {});
+    copyText(t, '已复制累计：' + t.replace(/\t/g, ' '));
+  });
+  $('btnCopySeg').addEventListener('click', function () {
+    var t = catRow(S.lastCounts || {});
+    copyText(t, '已复制本段：' + t.replace(/\t/g, ' '));
+  });
+
+  /* 本页设置单独存 vseg.mon.settings，绝不写主页面的 vseg.* */
+  var MON_KEY = 'vseg.mon.settings';
+
+  function saveSettings() {
+    var o = {
+      dir: $('dir').value.trim(),
+      src: S.src, name: S.name,
+      line: S.line, roi: S.roi, roiOn: S.roiOn,
+      clip: S.clip, speed: S.speed, start: S.start, imgsz: S.imgsz
+    };
+    try { localStorage.setItem(MON_KEY, JSON.stringify(o)); } catch (e) {}
+  }
+
+  function setClip(v) {
+    S.clip = v;
+    [].forEach.call($('clipChips').children, function (c) {
+      c.classList.toggle('on', (parseInt(c.dataset.clip, 10) || 0) === v);
+    });
+  }
+  function setSpeed(v) {
+    S.speed = v;
+    [].forEach.call($('speedChips').children, function (c) {
+      c.classList.toggle('on', (parseInt(c.dataset.speed, 10) || 0) === v);
+    });
+  }
+  function setImg(v) {
+    S.imgsz = v;
+    [].forEach.call($('sizeChips').children, function (c) {
+      c.classList.toggle('on', (parseInt(c.dataset.size, 10) || 0) === v);
+    });
+  }
+  function setLine(v) {
+    S.line = Math.round(Math.min(95, Math.max(5, v)));
+    $('lineRange').value = S.line;
+    $('lineVal').textContent = S.line + '%';
+    layoutOverlay();
+  }
+  function nudgeStart(d) {
+    var v = S.start + d;
+    if (S.duration) v = Math.min(v, Math.max(0, S.duration - 1));
+    S.start = Math.max(0, v);
+    $('startInput').value = fmtT(S.start);
+    loadStill();
+    saveSettings();
+  }
+
+  function loadSettings() {
+    var o = null;
+    try { o = JSON.parse(localStorage.getItem(MON_KEY) || 'null'); } catch (e) { o = null; }
+    if (!o || typeof o !== 'object') return;
+    if (o.dir) $('dir').value = o.dir;
+    if (typeof o.line === 'number') setLine(o.line);
+    if (o.roi && typeof o.roi.x === 'number') S.roi = o.roi;
+    S.roiOn = !!o.roiOn;
+    $('chkRoi').checked = S.roiOn;
+    if (typeof o.clip === 'number') setClip(o.clip);
+    if (typeof o.speed === 'number') setSpeed(o.speed);
+    if (typeof o.imgsz === 'number') setImg(o.imgsz);
+    if (typeof o.start === 'number') {
+      S.start = o.start;
+      $('startInput').value = fmtT(o.start);
+    }
+    if (o.src) { S.src = o.src; S.name = o.name || o.src.split(/[\\/]/).pop(); }
+    layoutOverlay();
+  }
+
+  $('btnSave').addEventListener('click', function () {
+    saveSettings();
+    toast('已保存：以后打开这页自动恢复这些设置');
+  });
+  $('btnReset').addEventListener('click', function () {
+    setLine(65);
+    S.roi = { x: 0, y: 0, w: 1, h: 1 };
+    S.roiOn = false;
+    $('chkRoi').checked = false;
+    layoutOverlay();
+    saveSettings();
+    toast('已复位：线 65%、识别区域全画面');
+  });
+
+  /* 空格 = 开始/停止，← → = 起点 ∓5 秒，f = 全屏 */
+  $('btnFull').addEventListener('click', function () {
+    var st = $('stage');
+    if (document.fullscreenElement) { document.exitFullscreen(); return; }
+    if (st.requestFullscreen) {
+      st.requestFullscreen().catch(function () { toast('这个环境不允许全屏'); });
+    } else {
+      toast('这个环境不允许全屏');
+    }
+  });
+  document.addEventListener('fullscreenchange', function () {
+    setTimeout(function () { if (S.vw) fitFrame(S.vw, S.vh); }, 80);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    var tag = ((e.target && e.target.tagName) || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      if (S.jobId) stopJob(); else start();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault(); nudgeStart(-5);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault(); nudgeStart(5);
+    } else if (e.key === 'f' || e.key === 'F') {
+      $('btnFull').click();
+    }
+  });
+
+  /* ---------------- 启动 ---------------- */
+  window.addEventListener('resize', function () {
+    if (S.vw) fitFrame(S.vw, S.vh);
+  });
+
+  (function init() {
+    loadSettings();
+    renderStats({});
+    layoutOverlay();
+    box.style.display = 'none';
+    $('startInput').value = fmtT(S.start);
+    fetch(API + '/health', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.model_ready) { srv(true, '已连接 · ' + (d.device || '').replace('NVIDIA ', '')); scan(); }
+        else { srv(false, d.model_loading ? '模型加载中…' : '模型未就绪'); err(d.model_error || ''); }
+      })
+      .catch(function () {
+        srv(false, '未连接');
+        err('模型服务没开：双击 D:\\车型识别\\启动模型服务.bat，等窗口里出现「就绪」再刷新本页。');
+      });
+  })();
+})();
+</script>
+</body>
+</html>

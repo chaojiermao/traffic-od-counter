@@ -1,0 +1,3176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>视频分段播放器 · 断点 + 5 分钟分段</title>
+<style>
+  :root{
+    --bg:#f4f6f9;
+    --card:#ffffff;
+    --line:#e2e6ec;
+    --line-2:#cfd6e0;
+    --text:#151a20;
+    --muted:#6b7480;
+    --muted-2:#98a1ad;
+    --accent:#2f6feb;
+    --accent-d:#1c56c9;
+    --accent-soft:#e9f0ff;
+    --warn:#e08612;
+    --warn-soft:#fdf3e3;
+    --ok:#12894a;
+    --stage:#0d1014;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 10px 28px rgba(16,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1380px;margin:0 auto;padding:22px 24px 30px}
+
+  /* ---------- header ---------- */
+  .top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{
+    width:38px;height:38px;border-radius:11px;flex:none;
+    background:linear-gradient(145deg,var(--accent),#5b8ff9);
+    display:grid;place-items:center;color:#fff;
+    box-shadow:0 4px 12px rgba(47,111,235,.28);
+  }
+  h1{font-size:16px;margin:0;letter-spacing:.2px;font-weight:650}
+  .sub{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+  .top-right{display:flex;align-items:center;gap:10px}
+  .file-chip{
+    max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    padding:6px 11px;border-radius:999px;background:#fff;border:1px solid var(--line);
+    font-size:12.5px;color:var(--muted);
+  }
+
+  /* ---------- layout ---------- */
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 356px;gap:18px;align-items:start}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .stage-card{padding:14px}
+
+  /* ---------- video ---------- */
+  .video-box{
+    position:relative;background:var(--stage);border-radius:11px;overflow:hidden;
+    aspect-ratio:16/9;display:grid;place-items:center;
+  }
+  video{width:100%;height:100%;object-fit:contain;background:var(--stage);display:none;
+    transform-origin:center center;will-change:transform;transition:transform .16s ease-out}
+  video.ready{display:block}
+  .video-box.dragging video{transition:none}
+  .video-box.zoomed video{cursor:grab}
+  .video-box.zoomed.dragging video{cursor:grabbing}
+
+  /* ---------- 框选裁切 ---------- */
+  .crop-layer{position:absolute;inset:0;z-index:5;cursor:crosshair;touch-action:none}
+  .crop-rect{position:absolute;display:none;border:1.5px solid #fff;border-radius:2px;
+    box-shadow:0 0 0 9999px rgba(6,9,13,.55),0 0 0 1px rgba(0,0,0,.25)}
+  .crop-hint{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:6;
+    background:rgba(12,16,22,.84);color:#fff;font-size:12px;padding:6px 12px;border-radius:999px;
+    backdrop-filter:blur(4px);white-space:nowrap;pointer-events:none}
+
+  .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:6px;text-align:center;padding:24px;transition:background .15s}
+  .empty.drag{background:rgba(47,111,235,.12)}
+  .empty-ico{width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.07);
+    display:grid;place-items:center;color:#8ea1bb;margin-bottom:6px}
+  .empty-title{color:#e8edf5;font-size:15px;font-weight:600;margin:0}
+  .empty-sub{color:#7d8a9c;font-size:12.5px;margin:0}
+  .empty-actions{margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
+  .url-row{display:flex;gap:8px;margin-top:12px;width:min(440px,100%)}
+  .url-row input{flex:1;min-width:0}
+  .empty input[type=text],.empty .url-row input{
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:#dfe6f0;
+  }
+  .empty input::placeholder{color:#6d7a8c}
+
+  /* ---------- prompt ---------- */
+  .prompt{position:absolute;inset:0;z-index:6;display:grid;place-items:center;
+    background:rgba(8,11,15,.58);backdrop-filter:blur(3px);animation:fade .18s ease}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .prompt-card{width:min(430px,90%);background:#fff;border-radius:15px;padding:22px 24px 18px;
+    box-shadow:0 20px 50px rgba(0,0,0,.35);text-align:left}
+  .prompt-badge{display:inline-block;font-size:11.5px;font-weight:600;color:#9a5c05;
+    background:var(--warn-soft);border:1px solid #f2ddb9;padding:3px 9px;border-radius:999px;margin-bottom:10px}
+  .prompt-card h3{margin:0 0 4px;font-size:16px}
+  .prompt-card p{margin:0 0 16px;color:var(--muted);font-size:13px}
+  .prompt-actions{display:flex;gap:9px;flex-wrap:wrap}
+  .prompt-actions .primary{flex:1;min-width:132px;justify-content:center}
+  .auto-line{display:flex;align-items:center;gap:7px;margin-top:14px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+  .auto-line input{accent-color:var(--accent);width:14px;height:14px}
+
+  /* ---------- buttons ---------- */
+  .btn{
+    appearance:none;border:1px solid var(--line-2);background:#fff;color:var(--text);
+    padding:8px 14px;border-radius:9px;font-size:13px;font-family:inherit;cursor:pointer;
+    transition:.14s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  }
+  .btn:hover{background:#f7f9fc;border-color:#b9c3d1}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.primary:hover{background:var(--accent-d);border-color:var(--accent-d)}
+  .btn.primary:disabled{background:#b9c8e4;border-color:#b9c8e4;cursor:not-allowed;transform:none}
+  .btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
+  .btn.ghost:hover{background:#f5f7fb;color:var(--text)}
+  .btn.small{padding:6px 11px;font-size:12.5px;border-radius:8px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn:disabled:hover{background:#fff;border-color:var(--line-2)}
+
+  /* ---------- timeline ---------- */
+  .timeline{
+    position:relative;height:54px;margin:22px 2px 4px;border-radius:10px;
+    cursor:pointer;touch-action:none;user-select:none;
+  }
+  .tl-segs{position:absolute;inset:0;border-radius:9px;overflow:hidden;background:#eef1f6;
+    box-shadow:inset 0 0 0 1px var(--line)}
+  .seg-block{position:absolute;top:0;bottom:0;background:#e8edf6;border-right:1px solid #fff;
+    transition:background .15s}
+  .seg-block.pre{background:#f7ecda;border-right-color:#fdf6ec}
+  .seg-block.done{background:#dfe8f9}
+  .seg-block.pre.done{background:#f3e2c6}
+  .seg-block.cur{background:linear-gradient(180deg,#d9e6ff,#c4d8ff)}
+  .seg-block.pre.cur{background:linear-gradient(180deg,#fbe3bd,#f6d49a)}
+  .sb-label{position:absolute;left:6px;top:5px;font-size:10.5px;color:#7c8798;font-weight:600;
+    pointer-events:none;letter-spacing:.3px}
+  .seg-block.cur .sb-label{color:var(--accent-d)}
+  .seg-block.pre .sb-label{color:#a5712b}
+  .tl-head{position:absolute;top:0;bottom:0;width:2px;background:var(--accent-d);pointer-events:none;
+    transform:translateX(-1px);will-change:left}
+  .tl-head::after{content:"";position:absolute;top:-5px;left:50%;transform:translateX(-50%);
+    width:11px;height:11px;border-radius:50%;background:#fff;border:2.5px solid var(--accent);
+    box-shadow:0 1px 4px rgba(0,0,0,.18)}
+  .tl-bp{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed var(--warn);
+    pointer-events:none;transform:translateX(-1px)}
+  .bp-handle{
+    position:absolute;top:-19px;left:50%;transform:translateX(-50%);
+    background:var(--warn);color:#fff;font-size:10.5px;font-weight:600;line-height:1;
+    padding:4px 7px;border-radius:6px;white-space:nowrap;pointer-events:auto;cursor:ew-resize;
+    box-shadow:0 2px 6px rgba(224,134,18,.35);touch-action:none;
+  }
+  .bp-handle::after{content:"";position:absolute;bottom:-4px;left:50%;transform:translateX(-50%);
+    border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid var(--warn)}
+
+  /* ---------- segment-local bar ---------- */
+  .seg-bar-row{display:flex;align-items:center;justify-content:space-between;margin:14px 2px 7px;gap:10px}
+  .seg-tag{font-size:12.5px;color:var(--muted);font-weight:600;display:inline-flex;align-items:center;gap:6px}
+  .seg-tag b{color:var(--text)}
+  .sbar{position:relative;height:9px;background:#e9edf4;border-radius:99px;cursor:pointer;
+    touch-action:none;margin:0 2px;overflow:hidden}
+  .sbar::before{content:"";position:absolute;inset:0;border-radius:99px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.03)}
+  .sbar-fill{position:absolute;top:0;bottom:0;left:0;width:0;border-radius:99px;
+    background:linear-gradient(90deg,#2f6feb,#5b8ff9);transition:width .06s linear}
+  .sbar.dragging .sbar-fill{transition:none}
+
+  /* ---------- controls ---------- */
+  .controls{display:flex;align-items:center;gap:14px;margin-top:14px;flex-wrap:wrap}
+  .ctl-group{display:flex;align-items:center;gap:7px}
+  .ctl-group.right{margin-left:auto}
+  .icon-btn{width:36px;height:36px;border-radius:9px;border:1px solid var(--line);background:#fff;
+    color:#41505f;display:grid;place-items:center;cursor:pointer;transition:.14s}
+  .icon-btn:hover{background:#f4f7fc;color:var(--accent-d);border-color:#c3d2ee}
+  .icon-btn:disabled{opacity:.4;cursor:not-allowed}
+  .icon-btn:disabled:hover{background:#fff;color:#41505f;border-color:var(--line)}
+  .play-btn{width:42px;height:42px;border-radius:11px;border:none;background:var(--accent);color:#fff;
+    display:grid;place-items:center;cursor:pointer;box-shadow:0 5px 14px rgba(47,111,235,.3);transition:.14s}
+  .play-btn:hover{background:var(--accent-d)}
+  .play-btn:active{transform:scale(.96)}
+  .time-readout{display:flex;flex-direction:column;line-height:1.25;margin-left:2px}
+  .t-main{font-variant-numeric:tabular-nums;font-size:13.5px;font-weight:600;color:#2a3440}
+  .t-main .dim{color:var(--muted-2);margin:0 3px;font-weight:400}
+  .t-sub{font-size:11.5px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+  .speed-hint{font-size:11px;color:#9a5c05;background:var(--warn-soft);border:1px solid #f2ddb9;
+    padding:3px 7px;border-radius:6px;white-space:nowrap}
+  .speed-box{display:flex;align-items:center;gap:9px;background:#f4f7fb;border:1px solid var(--line);
+    padding:4px 10px;border-radius:9px}
+  .speed-box input[type=range]{width:104px;-webkit-appearance:none;appearance:none;height:5px;
+    border-radius:99px;background:#dbe3ef;outline:none;cursor:pointer}
+  .speed-box input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+    border-radius:50%;background:#fff;border:2.5px solid var(--accent);cursor:grab;
+    box-shadow:0 1px 4px rgba(16,24,40,.2)}
+  .speed-box input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#fff;
+    border:2.5px solid var(--accent);cursor:grab}
+  .speed-val{font-size:12.5px;font-weight:700;color:var(--accent-d);min-width:40px;text-align:right;
+    font-variant-numeric:tabular-nums}
+
+  /* ---------- 画面缩放 ---------- */
+  .zoom-row{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .zoom-row input[type=range]{flex:1;min-width:0;-webkit-appearance:none;appearance:none;
+    height:6px;border-radius:99px;background:#e6ebf3;outline:none;cursor:pointer}
+  .zoom-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;
+    border-radius:50%;background:#fff;border:2.5px solid var(--accent);cursor:grab;
+    box-shadow:0 1px 4px rgba(16,24,40,.22)}
+  .zoom-row input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;
+    border:2.5px solid var(--accent);cursor:grab}
+  .zoom-row input[type=range]:disabled{opacity:.5;cursor:not-allowed}
+  .zoom-val{width:44px;text-align:right;font-size:12.5px;color:var(--muted);
+    font-variant-numeric:tabular-nums;flex:none}
+  .icon-btn.sm{width:30px;height:30px;border-radius:8px;flex:none;font-size:15px;line-height:1}
+  .btn.ghost.active{background:var(--accent-soft);border-color:#bed2f7;color:var(--accent-d);font-weight:600}
+  .btn.danger{color:#c62828;border-color:#f0c9c9;background:#fdf0f0;font-weight:600}
+
+  /* ---------- 人工计数 ---------- */
+  .tally-input-row{display:flex;gap:8px}
+  .tally-input-row input{flex:1;min-width:0;font-weight:600;letter-spacing:.4px}
+  .ne-row{margin-top:10px}
+  .ne-row input{border-color:#cbe8d6;background:#f7fdf9}
+  .ne-row input:focus{border-color:#12894a;box-shadow:0 0 0 3px rgba(18,137,74,.12)}
+  .ne-row .btn{border-color:#cbe8d6;color:#12894a;background:#f7fdf9}
+  .tile-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .tile-sub{font-size:9.5px;color:var(--muted-2);font-variant-numeric:tabular-nums;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+  .tile-sub b{font-weight:700;color:#12894a}
+  .tally-input-row input.bad{border-color:#e08b8b;box-shadow:0 0 0 3px rgba(198,40,40,.12)}
+  .tally-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:11px}
+  .copy-row{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .copy-row .btn{flex:1;justify-content:center;background:#f7f9fd;border-color:#dbe4f2;color:#3c4a5a}
+  .copy-row .btn:hover{background:#eef3fc;border-color:#c3d2ee;color:var(--accent-d)}
+  .copy-tip{font-size:10px;color:var(--muted-2);white-space:nowrap;flex:none}
+  .tile{display:flex;align-items:center;gap:6px;padding:7px 8px;border:1px solid var(--line);
+    background:#fff;border-radius:9px;cursor:pointer;font-family:inherit;text-align:left;
+    transition:border-color .12s,background .12s}
+  .tile:hover{border-color:#c3d2ee;background:#f7f9fd}
+  .tile:active{transform:scale(.985)}
+  .tile-code{font-size:10.5px;font-weight:700;padding:2px 5px;border-radius:5px;flex:none;
+    letter-spacing:.2px;font-variant-numeric:tabular-nums}
+  .tile-name{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .tile-num{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;color:#9aa3b0;
+    min-width:13px;text-align:right}
+  .tile.on .tile-num{color:var(--text)}
+  .tile[data-code="1"] .tile-code{background:#e9f0ff;color:#2f6feb}
+  .tile[data-code="2"] .tile-code{background:#e2f6f5;color:#0d8f8c}
+  .tile[data-code="3"] .tile-code{background:#f1eafe;color:#7c4ddb}
+  .tile[data-code="dbc"] .tile-code{background:#fdf3e3;color:#b26a06}
+  .tile[data-code="dhc"] .tile-code{background:#fdeaea;color:#c62828}
+  .tile[data-code="xhc"] .tile-code{background:#e7f6ec;color:#12894a}
+  .tile[data-code="gjc"] .tile-code{background:#fbeafb;color:#a21caf}
+  .tile:last-child:nth-child(odd){grid-column:span 2}
+
+  /* ---------- 分段条 ---------- */
+  .seg-strip{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;margin-top:10px;
+    scrollbar-width:thin}
+  .seg-strip:empty{display:none}
+  .seg-chip{flex:none;border:1px solid var(--line);background:#fff;border-radius:8px;
+    padding:4px 8px;font-size:11.5px;font-family:inherit;color:var(--muted);cursor:pointer;
+    display:inline-flex;gap:5px;align-items:center;transition:.12s}
+  .seg-chip:hover{border-color:#c3d2ee}
+  .seg-chip b{color:var(--text);font-variant-numeric:tabular-nums}
+  .seg-chip.on{background:var(--accent-soft);border-color:#bed2f7;color:var(--accent-d);font-weight:600}
+  .seg-chip.on b{color:var(--accent-d)}
+  .log-scope{display:inline-flex;gap:2px;background:#f2f5fa;border-radius:7px;padding:2px;
+    border:1px solid var(--line)}
+  .mini{border:none;background:transparent;font-family:inherit;font-size:10.5px;color:var(--muted-2);
+    padding:3px 7px;border-radius:5px;cursor:pointer}
+  .mini.on{background:#fff;color:var(--accent-d);font-weight:650;box-shadow:0 1px 2px rgba(16,24,40,.1)}
+
+  /* ---------- 记录明细 ---------- */
+  .log-head{display:flex;align-items:center;justify-content:space-between;margin:14px 0 7px;
+    font-size:12px;color:var(--muted);font-weight:600}
+  .log-tip{font-size:10.5px;color:var(--muted-2);font-weight:400}
+  .tally-log{max-height:198px;overflow:auto;border:1px solid var(--line);border-radius:10px;
+    background:#fbfcfe}
+  .trow{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:12.5px;cursor:pointer;
+    border-bottom:1px solid #f0f3f8}
+  .trow:last-child{border-bottom:none}
+  .trow:hover{background:#f2f6fd}
+  .trow.hl{background:#fff5d6;box-shadow:inset 3px 0 0 #f0b429}
+  .t-idx{width:20px;font-size:10.5px;color:var(--muted-2);font-variant-numeric:tabular-nums;
+    text-align:right;flex:none}
+  .t-code{font-size:10px;font-weight:700;padding:2px 5px;border-radius:5px;flex:none;
+    min-width:22px;text-align:center;letter-spacing:.2px}
+  .t-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#3a4654}
+  .t-time{font-size:11px;color:var(--muted-2);font-variant-numeric:tabular-nums;flex:none}
+  .t-del{width:20px;height:20px;border-radius:6px;border:none;background:transparent;color:#c2cad6;
+    cursor:pointer;font-size:14px;line-height:1;flex:none;display:grid;place-items:center;
+    font-family:inherit;padding:0;transition:.12s}
+  .t-del:hover{background:#fdeaea;color:#c62828}
+  .t-tag{font-size:9px;line-height:1.5;padding:1px 4px;border-radius:4px;flex:none;
+    background:#e7f6ec;color:#12894a;font-weight:700}
+  .note.ok{color:var(--ok)}
+
+  /* ---------- 计数线 / 识别区域 ---------- */
+  .guide-bar{display:flex;align-items:center;gap:14px;margin:10px 2px 0;flex-wrap:wrap;
+    font-size:12.5px;color:var(--muted)}
+  .gchk{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;font-weight:600}
+  .gchk input{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
+  .gval{font-variant-numeric:tabular-nums;color:var(--text);font-weight:650;min-width:38px}
+  .g-hint{color:var(--muted-2);font-size:11.5px;margin-left:auto}
+
+  /* ---------- 画面优化面板 ---------- */
+  .pic-panel{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:10px 2px 0;
+    padding:10px 12px;background:#f7f9fd;border:1px solid var(--line);border-radius:10px}
+  .pic-row{display:flex;align-items:center;gap:8px;flex:1 1 190px;min-width:180px}
+  .pic-label{font-size:11.5px;color:var(--muted);width:36px;flex:none}
+  .pic-row input[type=range]{flex:1;min-width:0;-webkit-appearance:none;appearance:none;height:5px;
+    border-radius:99px;background:#dbe3ef;outline:none;cursor:pointer}
+  .pic-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;
+    border-radius:50%;background:#fff;border:2.5px solid var(--accent);cursor:grab;
+    box-shadow:0 1px 3px rgba(16,24,40,.2)}
+  .pic-row input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#fff;
+    border:2.5px solid var(--accent);cursor:grab}
+  .pic-val{font-size:11.5px;color:var(--text);width:30px;text-align:right;flex:none;
+    font-variant-numeric:tabular-nums;font-weight:600}
+  .pic-tip{font-size:10.5px;color:var(--muted-2);margin-left:auto}
+
+  .guide-layer{position:absolute;inset:0;z-index:4;pointer-events:none;overflow:hidden;
+    border-radius:11px}
+  .count-line{position:absolute;left:0;right:0;height:0;pointer-events:none}
+  .count-line::before{content:"";position:absolute;left:0;right:0;top:-1.5px;height:3px;
+    background:repeating-linear-gradient(90deg,#ff2d55 0 14px,rgba(255,45,85,.15) 14px 20px);
+    box-shadow:0 0 6px rgba(255,45,85,.45)}
+  .count-line::after{content:"";position:absolute;left:0;right:0;top:-11px;height:22px;
+    pointer-events:auto;cursor:ns-resize}
+  .cl-tag{position:absolute;right:10px;top:-13px;background:#ff2d55;color:#fff;font-size:10.5px;
+    font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap;
+    font-variant-numeric:tabular-nums;box-shadow:0 2px 6px rgba(255,45,85,.4)}
+  .roi-box{position:absolute;border:1.5px dashed #ffd60a;background:rgba(255,214,10,.07);
+    border-radius:3px;pointer-events:auto;cursor:move}
+  .roi-h{position:absolute;width:12px;height:12px;background:#fff;border:2px solid #ffd60a;
+    border-radius:3px;pointer-events:auto}
+  .roi-h[data-c="nw"]{left:-7px;top:-7px;cursor:nwse-resize}
+  .roi-h[data-c="ne"]{right:-7px;top:-7px;cursor:nesw-resize}
+  .roi-h[data-c="sw"]{left:-7px;bottom:-7px;cursor:nesw-resize}
+  .roi-h[data-c="se"]{right:-7px;bottom:-7px;cursor:nwse-resize}
+  .roi-tag{position:absolute;left:0;top:-19px;background:#ffd60a;color:#4a3b00;font-size:10.5px;
+    font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap}
+
+  /* ---------- 回到第 N 条 ---------- */
+  .jump-row{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+  .jump-row input{width:74px;padding:5px 9px;font-size:12.5px;text-align:center}
+  .jump-row .btn{flex:none}
+  .jump-tip{font-size:10.5px;color:var(--muted-2);margin-left:auto}
+
+  /* ---------- 模型计数 ---------- */
+  .model-actions{display:flex;gap:8px;margin:10px 0 0}
+  .model-actions .btn{flex:1;justify-content:center}
+  .model-opt{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12px;color:var(--muted)}
+  .model-opt select{
+    padding:5px 8px;border:1px solid var(--line-2);border-radius:8px;background:#fff;
+    font-family:inherit;font-size:12px;color:var(--text);cursor:pointer;outline:none;
+  }
+  .model-opt select:focus{border-color:var(--accent)}
+  .model-opt-tip{margin-left:auto;font-size:10.5px;color:var(--muted-2)}
+  .count.ok{background:#e7f6ec;color:#12894a}
+  .count.warn{background:var(--warn-soft);color:#9a5c05}
+  .count.bad{background:#fdeaea;color:#c62828}
+  .model-progress{margin-top:12px}
+  .mp-bar{height:7px;background:#eef1f6;border-radius:99px;overflow:hidden;margin-bottom:6px}
+  .mp-bar i{display:block;height:100%;width:0;border-radius:99px;
+    background:linear-gradient(90deg,var(--accent),#5b8ff9);transition:width .25s}
+  .mp-text{font-size:11.5px;color:var(--muted-2);display:block;font-variant-numeric:tabular-nums}
+  .cmp-table{margin-top:12px}
+  .cmp-head,.cmp-row{display:grid;grid-template-columns:1fr 42px 42px 44px;gap:6px;
+    align-items:center;padding:5px 4px;font-size:12px}
+  .cmp-head{color:var(--muted-2);font-size:10.5px;border-bottom:1px solid var(--line);
+    padding-bottom:6px;font-weight:600}
+  .cmp-head span:not(:first-child),.cmp-row span:not(:first-child){text-align:right;
+    font-variant-numeric:tabular-nums}
+  .cmp-row{border-bottom:1px solid #f2f5fa;color:#3a4654}
+  .cmp-row:last-child{border-bottom:none}
+  .cmp-row .c-name{display:flex;align-items:center;gap:6px;min-width:0}
+  .cmp-row .c-dot{width:7px;height:7px;border-radius:2px;flex:none}
+  .cmp-row .c-man{font-weight:650}
+  .cmp-row .c-mod{color:var(--muted)}
+  .cmp-row .c-diff{font-weight:650}
+  .c-diff.zero{color:var(--ok)}
+  .c-diff.up{color:#c62828}
+  .c-diff.down{color:#b26a06}
+  .cmp-total{display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;
+    border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);font-weight:600}
+  .cmp-total b{font-variant-numeric:tabular-nums;color:var(--text);font-size:16px}
+
+  /* ---------- 统计弹窗 ---------- */
+  .modal{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:20px;
+    background:rgba(10,14,20,.5);backdrop-filter:blur(3px);animation:fade .16s ease}
+  .modal-card{width:min(430px,100%);background:#fff;border-radius:16px;padding:20px 22px 18px;
+    box-shadow:0 24px 60px rgba(0,0,0,.3);animation:pop .2s cubic-bezier(.2,.8,.3,1.15)}
+  @keyframes pop{from{transform:translateY(10px) scale(.97);opacity:.5}to{transform:none;opacity:1}}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .modal-head h3{margin:0;font-size:15px}
+  .modal-head .icon-btn{width:28px;height:28px;border-radius:8px;font-size:16px;line-height:1}
+  .stat-meta{font-size:11.5px;color:var(--muted-2);margin:0 0 10px}
+  .stat-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed #eef1f6}
+  .stat-row:last-of-type{border-bottom:none}
+  .s-code{font-size:10.5px;font-weight:700;width:38px;text-align:center;padding:2px 0;
+    border-radius:5px;flex:none;font-variant-numeric:tabular-nums}
+  .s-name{font-size:13px;width:56px;flex:none}
+  .s-bar{flex:1;height:6px;background:#f0f3f8;border-radius:99px;overflow:hidden}
+  .s-bar i{display:block;height:100%;border-radius:99px;transition:width .25s}
+  .s-num{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;width:44px;text-align:right;flex:none}
+  .s-num em{display:block;font-style:normal;font-size:9.5px;font-weight:400;color:var(--muted-2);margin-top:-1px}
+  .stat-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:12px;
+    padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+  .stat-total b{font-size:20px;color:var(--text);font-variant-numeric:tabular-nums}
+  .stat-sub{font-size:11.5px;color:var(--muted-2);font-weight:600;margin:0 0 4px;letter-spacing:.2px}
+  .segsum-head,.segsum-row{display:grid;grid-template-columns:52px 1fr 40px 40px;gap:6px;
+    align-items:center;font-size:12px;padding:4px 2px}
+  .segsum-head{color:var(--muted-2);font-size:10.5px;font-weight:600;
+    border-bottom:1px solid var(--line);padding-bottom:5px}
+  .segsum-row{color:#3a4654;border-bottom:1px solid #f4f6fa}
+  .segsum-row.on{background:var(--accent-soft);color:var(--accent-d);font-weight:650;
+    border-radius:5px;padding-left:6px;padding-right:6px}
+  .segsum-row.total{border-bottom:none;border-top:1px solid var(--line);font-weight:700;
+    color:var(--text);padding-top:6px}
+  .segsum-row .ss-time{color:var(--muted-2);font-size:11px;font-variant-numeric:tabular-nums}
+  .segsum-row .ss-num{text-align:right;font-variant-numeric:tabular-nums}
+  .modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+  /* ---------- side panel ---------- */
+  .side{display:flex;flex-direction:column;gap:18px}
+  .sec{padding:16px}
+  .sec-title{margin:0 0 12px;font-size:13px;font-weight:650;letter-spacing:.2px;display:flex;align-items:center;gap:8px}
+  .count{font-size:11px;font-weight:600;color:var(--muted);background:#f1f4f9;border-radius:999px;padding:1px 7px}
+  .field{margin-bottom:16px}
+  .field:last-child{margin-bottom:0}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600}
+  .row{display:flex;gap:8px}
+  .row input{flex:1;min-width:0}
+  input[type=text],input[type=number]{
+    width:100%;padding:8px 11px;border:1px solid var(--line-2);border-radius:9px;background:#fff;
+    font-family:inherit;font-size:13px;color:var(--text);outline:none;transition:.14s;
+    font-variant-numeric:tabular-nums;
+  }
+  input[type=text]:focus,input[type=number]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,111,235,.13)}
+  .row2{display:flex;gap:8px;margin-top:8px}
+  .row2 .btn{flex:1;justify-content:center}
+  .snap-row{display:flex;align-items:center;gap:8px;margin-top:7px}
+  .snap-tip{font-size:11px;color:var(--muted-2);margin-left:auto;white-space:nowrap}
+  .chips{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:#fff;color:var(--muted);font-size:12px;font-family:inherit;
+    padding:4px 10px;border-radius:999px;cursor:pointer;transition:.12s}
+  .chip:hover{border-color:#b9c8e4;color:var(--accent-d)}
+  .chip.active{background:var(--accent-soft);border-color:#bed2f7;color:var(--accent-d);font-weight:600}
+  .note{margin:8px 0 0;font-size:11.5px;color:var(--muted-2);line-height:1.55}
+
+  .seg-list{max-height:min(34vh,330px);overflow:auto;margin:0 -6px;padding:0 6px}
+  .seg-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;
+    border-radius:9px;border:1px solid transparent;background:transparent;font-family:inherit;
+    font-size:13px;color:var(--text);cursor:pointer;transition:.12s;margin-bottom:2px}
+  .seg-item:hover{background:#f5f8fd;border-color:#e6eefa}
+  .seg-item.active{background:var(--accent-soft);border-color:#c3d6fa}
+  .seg-item .idx{
+    width:23px;height:23px;flex:none;border-radius:7px;display:grid;place-items:center;
+    font-size:11px;font-weight:650;color:var(--muted);background:#eef1f6;font-variant-numeric:tabular-nums;
+  }
+  .seg-item.active .idx{background:var(--accent);color:#fff}
+  .seg-item.pre .idx{background:#f7ecda;color:#a5712b}
+  .seg-item.pre.active .idx{background:var(--warn);color:#fff}
+  .seg-item.done .idx{background:#e2f0e7;color:var(--ok)}
+  .seg-main{flex:1;min-width:0}
+  .seg-time{display:block;font-variant-numeric:tabular-nums;font-weight:600;font-size:12.5px;letter-spacing:.1px}
+  .seg-sub{display:block;font-size:11px;color:var(--muted-2);margin-top:1px}
+  .seg-item.active .seg-sub{color:#4a72c4}
+  .seg-item .playtag{opacity:0;font-size:11px;color:var(--accent-d);font-weight:600}
+  .seg-item.active .playtag{opacity:1}
+  .seg-item.done .seg-sub{color:var(--ok)}
+  .hint-empty{color:var(--muted-2);font-size:12.5px;text-align:center;padding:22px 0}
+  .sec-foot{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .sec-foot .btn{width:100%;justify-content:center}
+  .foot{margin-top:20px;text-align:center;color:var(--muted-2);font-size:11.5px;letter-spacing:.2px}
+  .foot kbd{background:#fff;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
+    padding:1px 5px;font-family:inherit;font-size:10.5px;color:var(--muted);margin:0 1px}
+
+  body.no-video .timeline,body.no-video .sbar,body.no-video .controls{opacity:.45;pointer-events:none}
+
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#d5dce6;border-radius:99px;border:2px solid #fff}
+  ::-webkit-scrollbar-thumb:hover{background:#c2cbd8}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  @media (max-width:1040px){
+    .layout{grid-template-columns:1fr}
+    .seg-list{max-height:280px}
+    .wrap{padding:16px 14px 26px}
+  }
+</style>
+</head>
+<body class="no-video">
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+          <rect x="3" y="4" width="18" height="16" rx="3"/>
+          <path d="M12 3v18" stroke-dasharray="3 2.4"/>
+        </svg>
+      </div>
+      <div>
+        <h1>视频分段播放器</h1>
+        <p class="sub">设一个断点，之后每 5 分钟自动暂停，问你要不要接着看下一段</p>
+      </div>
+    </div>
+    <div class="top-right">
+      <span class="file-chip" id="fileChip" hidden></span>
+      <button class="btn" id="btnPick2" hidden>换个视频</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ============ 播放区 ============ -->
+    <section class="card stage-card">
+      <div class="video-box" id="videoBox">
+        <video id="video" playsinline preload="metadata"></video>
+        <div class="guide-layer" id="guideLayer" hidden>
+          <div class="roi-box" id="roiBox" hidden>
+            <span class="roi-tag">识别区域</span>
+            <span class="roi-h" data-c="nw"></span>
+            <span class="roi-h" data-c="ne"></span>
+            <span class="roi-h" data-c="sw"></span>
+            <span class="roi-h" data-c="se"></span>
+          </div>
+          <div class="count-line" id="countLine"><span class="cl-tag" id="clTag">计数线 65%</span></div>
+        </div>
+        <div class="crop-layer" id="cropLayer" hidden><div class="crop-rect" id="cropRect"></div></div>
+        <div class="crop-hint" id="cropHint" hidden>拖动框选要放大的区域 · Esc 取消</div>
+
+        <div class="empty" id="empty">
+          <div class="empty-ico">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h7L20 10.5v7A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5z"/>
+              <path d="M13 4v7h7"/><path d="M10 12.5v5l4-2.5z" fill="currentColor" stroke="none"/>
+            </svg>
+          </div>
+          <p class="empty-title">把视频拖到这里</p>
+          <p class="empty-sub">文件只在本地播放，不会上传到任何服务器</p>
+          <div class="empty-actions">
+            <button class="btn primary" id="btnPick">选择视频文件</button>
+            <input type="file" id="file" accept="video/*" hidden>
+          </div>
+          <div class="url-row">
+            <input type="text" id="urlInput" placeholder="或粘贴视频直链 https://…" spellcheck="false">
+            <button class="btn" id="btnUrl">载入</button>
+          </div>
+        </div>
+
+        <div class="prompt" id="prompt" hidden>
+          <div class="prompt-card">
+            <span class="prompt-badge">本段播完</span>
+            <h3 id="promptTitle">这一段已播放完 5:00</h3>
+            <p id="promptDesc">下一段：05:00 – 10:00（5:00）</p>
+            <div class="prompt-actions">
+              <button class="btn primary" id="btnNextSeg">播放下一段</button>
+              <button class="btn" id="btnReplaySeg">重播本段</button>
+              <button class="btn ghost" id="btnStay">留在这里</button>
+            </div>
+            <label class="auto-line"><input type="checkbox" id="chkAutoNext"> 以后自动播放下一段，不再询问</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- 计数线 / 识别区域 -->
+      <div class="guide-bar">
+        <label class="gchk"><input type="checkbox" id="chkLine" checked> 计数线</label>
+        <span class="gval" id="lineVal">65%</span>
+        <label class="gchk"><input type="checkbox" id="chkRoi"> 识别区域</label>
+        <button class="btn ghost small" id="btnRoiAll" title="把识别区域恢复成整个画面">全画面</button>
+        <button class="btn ghost small" id="btnPic" title="调亮度/对比度/光感（只影响你看的画面，不影响模型）">画面</button>
+        <span class="g-hint" id="guideHint">在画面上拖动红线调整位置</span>
+      </div>
+
+      <!-- 画面优化（只改预览，不影响送模型的视频） -->
+      <div class="pic-panel" id="picPanel" hidden>
+        <div class="pic-row">
+          <span class="pic-label">亮度</span>
+          <input type="range" id="picBright" min="50" max="180" step="1" value="100">
+          <b class="pic-val" id="picBrightVal">100</b>
+        </div>
+        <div class="pic-row">
+          <span class="pic-label">对比度</span>
+          <input type="range" id="picContrast" min="50" max="180" step="1" value="100">
+          <b class="pic-val" id="picContrastVal">100</b>
+        </div>
+        <div class="pic-row">
+          <span class="pic-label">光感</span>
+          <input type="range" id="picLight" min="40" max="220" step="1" value="100">
+          <b class="pic-val" id="picLightVal">100</b>
+        </div>
+        <button class="btn ghost small" id="btnPicReset">还原画面</button>
+        <span class="pic-tip">只影响预览，模型仍按原视频识别</span>
+      </div>
+
+      <!-- 全片进度条 -->
+      <div class="timeline" id="timeline" title="点击或拖动定位 · 橙色标签是断点，可拖动">
+        <div class="tl-segs" id="tlSegs"></div>
+        <div class="tl-head" id="tlHead" style="left:0"></div>
+        <div class="tl-bp" id="tlBp" style="left:0">
+          <span class="bp-handle" id="bpH">断点 0:00</span>
+        </div>
+      </div>
+
+      <!-- 段内进度条 -->
+      <div class="seg-bar-row">
+        <span class="seg-tag" id="segNow">未载入视频</span>
+        <span class="seg-tag" id="segLenTag" hidden></span>
+      </div>
+      <div class="sbar" id="sbar"><div class="sbar-fill" id="sbarFill"></div></div>
+
+      <!-- 控制条 -->
+      <div class="controls">
+        <div class="ctl-group">
+          <button class="icon-btn" id="btnPrev" title="上一段（P）">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5h2.2v14H8zM20 5.4v13.2L9.4 12z"/></svg>
+          </button>
+          <button class="play-btn" id="btnPlay" title="播放 / 暂停（空格）"></button>
+          <button class="icon-btn" id="btnNext" title="下一段（N）">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13.8 5h2.2v14h-2.2zM4 5.4 14.6 12 4 18.6z"/></svg>
+          </button>
+        </div>
+
+        <div class="time-readout">
+          <span class="t-main"><span id="tCur">0:00</span><span class="dim">/</span><span id="tSeg">0:00</span></span>
+          <span class="t-sub" id="tAll">全片 --:--</span>
+        </div>
+
+        <div class="ctl-group right">
+          <span class="speed-hint" id="speedHint" hidden>4× 以上浏览器会静音</span>
+          <div class="speed-box">
+            <input type="range" id="speedRange" min="0.5" max="6" step="0.1" value="1" aria-label="播放倍速">
+            <span class="speed-val" id="speedVal">1.0×</span>
+          </div>
+          <button class="icon-btn" id="btnMute" title="静音"></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 侧栏 ============ -->
+    <aside class="side">
+      <section class="card sec">
+        <h2 class="sec-title">人工计数 <span class="count" id="tallyTotal">0 辆</span></h2>
+        <div class="tally-input-row">
+          <input type="text" id="tallyInput" placeholder="连打 11231231dbc 这样" autocomplete="off" spellcheck="false">
+          <button class="btn small" id="tallyAdd" title="确认这一批（输入框清空，开始下一批）">记录</button>
+        </div>
+        <p class="note" id="tallyHint">敲代码即刻记账，这一串会留在框里；退格撤回上一辆，回车收尾。</p>
+
+        <div class="tally-input-row ne-row">
+          <input type="text" id="neInput" placeholder="新能源表：w s a xxhc xdhc xdbc"
+                 autocomplete="off" spellcheck="false"
+                 title="w 新能源摩托 / s 燃油摩托 / a 出租车 / xxhc 新能源小货车 / xdhc 新能源大货车 / xdbc 新能源大巴车 / 1 2 3 其余默认算新能源">
+          <button class="btn small" id="neAdd">记</button>
+        </div>
+        <p class="note" id="neHint">新能源：w 摩托 · 4 公交 · xxhc 小货 · xdhc 大货 · xdbc 大巴　｜　旧：s 摩托 · dhc 大货 · xhc 小货 · 5 公交 · 6 大巴 · dbc 大巴 · gjc 公交 · a 出租 · 1 2 3 默认新能</p>
+
+        <div class="tally-grid" id="tallyGrid"></div>
+
+        <div class="copy-row">
+          <button class="btn ghost small" id="btnCopyStat" title="7 列：其它小型客车 / 其它大型客车 / 公交车 / 出租车 / 小型货车 / 大型货车 / 摩托车">复制总表</button>
+          <button class="btn ghost small" id="btnCopyNE" title="5 列：小客车 / 大客车 / 出租车 / 货车(小货+大货) / 公交车">复制新能源表</button>
+          <span class="copy-tip">本段 · 不带表头</span>
+        </div>
+
+        <div class="seg-strip" id="segStrip"></div>
+
+        <div class="log-head">
+          <span>记录明细 <span class="count" id="logCount">0</span></span>
+          <span class="log-scope">
+            <button class="mini on" id="scopeSeg">本段</button>
+            <button class="mini" id="scopeAll">全部</button>
+          </span>
+        </div>
+        <div class="tally-log" id="tallyLog"></div>
+
+        <div class="jump-row">
+          <input type="number" id="jumpInput" min="1" step="1" placeholder="第 N 条" title="按原有人工表的序号，不含新能源表">
+          <button class="btn ghost small" id="btnJump">回到这条</button>
+          <span class="jump-tip">视频和输入框一起回退</span>
+        </div>
+
+        <div class="row2">
+          <button class="btn primary small" id="btnStat">统计</button>
+          <button class="btn ghost small" id="btnUndo">撤销</button>
+          <button class="btn ghost small" id="btnClear">清空</button>
+          <button class="btn ghost small" id="btnBackup" title="把两张表的数据导出成 JSON 备份">备份</button>
+        </div>
+        <div class="snap-row">
+          <button class="btn ghost small" id="btnRestoreClear" disabled title="把最近一次「清空」之前的计数找回来">撤销清空</button>
+          <span class="snap-tip" id="snapTip">清空前会自动留一份</span>
+        </div>
+      </section>
+
+      <section class="card sec">
+        <h2 class="sec-title">模型计数 <span class="count" id="modelBadge">未连接</span></h2>
+        <p class="note" id="modelNote">双击 <b>D:\车型识别\启动模型服务.bat</b>，页面会自动连上本机模型（YOLOv8x + ByteTrack）。</p>
+        <div class="model-actions">
+          <button class="btn primary small" id="btnModelRun">开始识别</button>
+          <button class="btn ghost small" id="btnModelStop" disabled>停止</button>
+          <button class="btn ghost small" id="btnModelCheck">重新检测</button>
+          <button class="btn ghost small" id="btnModelWatch" title="单独一页看模型实时画面，方便调识别区域和识别线">调参监看 →</button>
+        </div>
+        <div class="model-opt">
+          <span>抽帧</span>
+          <select id="modelSpeed">
+            <option value="1">1×（最准，最慢）</option>
+            <option value="2" selected>2×</option>
+            <option value="3">3×</option>
+            <option value="5">5×</option>
+          </select>
+          <span class="model-opt-tip">识别用当前计数线</span>
+        </div>
+        <div class="model-progress" id="modelProgress" hidden>
+          <div class="mp-bar"><i id="mpFill"></i></div>
+          <span class="mp-text" id="mpText">准备中…</span>
+        </div>
+        <div class="cmp-table" id="cmpTable"></div>
+      </section>
+
+      <section class="card sec">
+        <h2 class="sec-title">断点与分段间隔</h2>
+
+        <div class="field">
+          <label>断点位置（从这里开始按间隔切段）</label>
+          <div class="row">
+            <input type="text" id="bpInput" value="0:00" spellcheck="false" placeholder="0:00 或 1:02:03">
+            <button class="btn small" id="btnBpSet">设定</button>
+          </div>
+          <div class="row2">
+            <button class="btn ghost small" id="btnBpNow">用当前播放位置</button>
+            <button class="btn ghost small" id="btnBpJump">跳到断点</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>分段间隔</label>
+          <div class="row">
+            <input type="number" id="lenInput" min="0.5" step="0.5" value="5">
+            <button class="btn small" id="btnLenSet">应用</button>
+          </div>
+          <div class="chips" id="lenChips"></div>
+          <p class="note">从断点起按此间隔切段，播放到段尾自动暂停并询问是否继续下一段。</p>
+        </div>
+      </section>
+
+      <section class="card sec">
+        <h2 class="sec-title">画面放大 / 裁切</h2>
+        <div class="zoom-row">
+          <button class="icon-btn sm" id="zoomOut" title="缩小（−）">−</button>
+          <input type="range" id="zoomRange" min="1" max="6" step="0.1" value="1" aria-label="画面缩放">
+          <button class="icon-btn sm" id="zoomIn" title="放大（+）">+</button>
+          <span class="zoom-val" id="zoomVal">1.0×</span>
+        </div>
+        <div class="row2">
+          <button class="btn ghost small" id="btnCrop">框选裁切</button>
+          <button class="btn ghost small" id="btnZoomReset">还原画面</button>
+        </div>
+        <p class="note">在画面上滚动滚轮缩放；放大后按住画面拖动平移；「框选裁切」直接拉一个框，画面会放大到该区域。</p>
+      </section>
+
+      <section class="card sec">
+        <h2 class="sec-title">分段列表 <span class="count" id="segCount">0</span></h2>
+        <div class="seg-list" id="segList"></div>
+        <div class="sec-foot">
+          <button class="btn ghost small" id="btnExport" disabled>导出分段清单（CSV）</button>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <footer class="foot">
+    <kbd>空格</kbd> 播放/暂停　<kbd>←</kbd><kbd>→</kbd> 前后 5 秒　<kbd>N</kbd> 下一段　<kbd>P</kbd> 上一段　<kbd>B</kbd> 记断点　<kbd>↑</kbd><kbd>↓</kbd> 倍速　滚轮 缩放画面　<kbd>0</kbd> 还原画面
+  </footer>
+</div>
+
+<div class="modal" id="countModal" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>人工计数统计</h3>
+      <button class="icon-btn" id="modalClose" title="关闭">×</button>
+    </div>
+    <p class="stat-meta" id="statMeta"></p>
+    <div id="statTable"></div>
+    <div id="statSegs"></div>
+    <div class="modal-foot">
+      <button class="btn primary small" id="btnModalOk">知道了</button>
+    </div>
+  </div>
+</div>
+
+<svg width="0" height="0" style="position:absolute;pointer-events:none" aria-hidden="true">
+  <filter id="vGamma" color-interpolation-filters="sRGB">
+    <feComponentTransfer>
+      <feFuncR type="gamma" exponent="1" amplitude="1" offset="0"/>
+      <feFuncG type="gamma" exponent="1" amplitude="1" offset="0"/>
+      <feFuncB type="gamma" exponent="1" amplitude="1" offset="0"/>
+    </feComponentTransfer>
+  </filter>
+</svg>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------- helpers ---------------- */
+  var $ = function (id) { return document.getElementById(id); };
+  var clamp = function (v, a, b) { return Math.min(b, Math.max(a, v)); };
+
+  function fmt(t) {
+    if (!isFinite(t) || t < 0) t = 0;
+    t = Math.floor(t);
+    var h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    var mm = String(m).padStart(2, '0'), ss = String(s).padStart(2, '0');
+    return h > 0 ? h + ':' + mm + ':' + ss : m + ':' + ss;
+  }
+
+  function parseTime(raw) {
+    var s = String(raw == null ? '' : raw).trim().replace(/[：:]/g, ':');
+    if (!s) return null;
+    var parts = s.split(':');
+    if (parts.length > 3) return null;
+    var total = 0;
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].trim();
+      if (!/^\d+(\.\d+)?$/.test(p)) return null;
+      total = total * 60 + parseFloat(p);
+    }
+    return total;
+  }
+
+  var ICON_PLAY = '<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M8 4.8v14.4L20 12z"/></svg>';
+  var ICON_PAUSE = '<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>';
+  var ICON_VOL = '<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z"/><path d="M15.4 8.4a4.6 4.6 0 0 1 0 7.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M18 6a8 8 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+  var ICON_MUTE = '<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z"/><path d="M16 9.5l5 5m0-5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+
+  // 新能源表：独立于上面那张表，也不参与模型统计；前缀 x 表示新能源
+  var NE_CODES = [
+    { code: 'xxhc', type: 'xhc', ne: true, name: '新能源小货车' },
+    { code: 'xdhc', type: 'dhc', ne: true, name: '新能源大货车' },
+    { code: 'xdbc', type: 'dbc', ne: true, name: '新能源大巴车' },
+    { code: 'w', type: '3', ne: true, name: '新能源摩托车' },
+    { code: 's', type: '3', ne: false, name: '燃油摩托车' },
+    { code: 'a', type: '2', ne: true, name: '新能源出租车' },
+    { code: '1', type: '1', ne: true, name: '新能源小客车' },
+    { code: '2', type: '2', ne: true, name: '新能源出租车' },
+    { code: '3', type: '3', ne: true, name: '新能源摩托车' },
+    { code: 'dbc', type: 'dbc', ne: false, name: '大巴车' },
+    { code: '4', type: 'gjc', ne: true, name: '新能源公交车' },
+    { code: '5', type: 'gjc', ne: false, name: '旧公交车' },
+    { code: '6', type: 'dbc', ne: false, name: '大巴车' },
+    { code: 'dhc', type: 'dhc', ne: false, name: '大货车' },
+    { code: 'xhc', type: 'xhc', ne: false, name: '小货车' },
+    { code: 'gjc', type: 'gjc', ne: false, name: '公交车' }
+  ];
+
+  var VEHICLES = [
+    { code: '1', name: '小客车', color: '#2f6feb' },
+    { code: '2', name: '出租车', color: '#0d8f8c' },
+    { code: '3', name: '摩托车', color: '#7c4ddb' },
+    { code: 'dbc', name: '大巴车', color: '#b26a06' },
+    { code: 'dhc', name: '大货车', color: '#c62828' },
+    { code: 'xhc', name: '小货车', color: '#12894a' },
+    { code: 'gjc', name: '公交车', color: '#a21caf' }
+  ];
+
+  /* ---------------- refs ---------------- */
+  var video = $('video');
+  var timeline = $('timeline'), tlSegs = $('tlSegs'), tlHead = $('tlHead'), tlBp = $('tlBp'), bpH = $('bpH');
+  var sbar = $('sbar'), sbarFill = $('sbarFill');
+  var promptBox = $('prompt');
+  var segList = $('segList');
+  var emptyBox = $('empty'), videoBox = $('videoBox');
+  var bpInput = $('bpInput'), lenInput = $('lenInput');
+
+  /* ---------------- state ---------------- */
+  var state = {
+    duration: 0,
+    segLen: 300,          // 分段间隔（秒）
+    breakpoint: 0,        // 断点（秒）
+    segments: [],
+    cur: 0,
+    speed: 1,
+    autoNext: false,
+    promptOpen: false,
+    objectUrl: null,
+    fileName: '',
+    file: null,          // 本地视频文件（送模型识别要用）
+    scrub: false,
+    bpDrag: false,
+    sDrag: false,
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    cropMode: false,
+    tally: [],
+    tally2: []
+  };
+
+  /* ---------------- 分段计算 ---------------- */
+  function buildSegments() {
+    var d = state.duration;
+    if (!d || !isFinite(d)) return [];
+    var L = Math.max(5, state.segLen);
+    var bp = clamp(state.breakpoint, 0, d);
+    var hasPre = bp >= 0.5 && bp <= d - 0.5;
+    var out = [];
+    if (hasPre) out.push({ start: 0, end: bp, pre: true });
+    var s = hasPre ? bp : 0;
+    var guard = 0;
+    while (s < d - 0.15 && guard++ < 5000) {
+      var e = Math.min(s + L, d);
+      out.push({ start: s, end: e, pre: false });
+      s = e;
+    }
+    if (!out.length) out.push({ start: 0, end: d, pre: false });
+    // 尾巴太短就并到上一段，避免出现 0.3 秒的碎片
+    if (out.length > 1) {
+      var last = out[out.length - 1];
+      if (last.end - last.start < 1) {
+        var prev = out[out.length - 2];
+        if (!last.pre) { prev.end = last.end; out.pop(); }
+      }
+    }
+    var order = 0;
+    out.forEach(function (sg) {
+      sg.order = sg.pre ? 0 : ++order;   // 片头不计入正片序号
+      sg.done = false;
+    });
+    return out;
+  }
+
+  function segIndexAt(t) {
+    var segs = state.segments;
+    if (!segs.length) return 0;
+    for (var i = 0; i < segs.length; i++) {
+      if (t < segs[i].end - 0.001) return i;
+    }
+    return segs.length - 1;
+  }
+
+  function segName(sg) {
+    if (!sg) return '—';
+    return sg.pre ? '片头' : '第 ' + sg.order + ' 段';
+  }
+
+  /* ---------------- 渲染 ---------------- */
+  function renderTimeline() {
+    var d = state.duration || 1;
+    tlSegs.innerHTML = '';
+    state.segments.forEach(function (sg, i) {
+      var block = document.createElement('div');
+      block.className = 'seg-block' + (sg.pre ? ' pre' : '') +
+        (sg.done ? ' done' : '') + (i === state.cur ? ' cur' : '');
+      var left = sg.start / d * 100, w = (sg.end - sg.start) / d * 100;
+      block.style.left = left + '%';
+      block.style.width = Math.max(w, 0.05) + '%';
+      if (w * timeline.clientWidth / 100 > 30) {
+        var lab = document.createElement('span');
+        lab.className = 'sb-label';
+        lab.textContent = sg.pre ? '片头' : sg.order;
+        block.appendChild(lab);
+      }
+      tlSegs.appendChild(block);
+    });
+    var bpPct = state.duration ? clamp(state.breakpoint, 0, state.duration) / state.duration * 100 : 0;
+    tlBp.style.left = bpPct + '%';
+    tlBp.style.display = state.duration ? 'block' : 'none';
+    // 贴边时不让标签溢出卡片
+    bpH.style.transform = bpPct < 10 ? 'translateX(-2px)'
+      : (bpPct > 90 ? 'translateX(calc(-100% + 2px))' : 'translateX(-50%)');
+    bpH.textContent = '断点 ' + fmt(state.breakpoint);
+    updateBars();
+  }
+
+  function renderList() {
+    segList.innerHTML = '';
+    $('segCount').textContent = state.segments.length;
+    if (!state.segments.length) {
+      var d0 = document.createElement('div');
+      d0.className = 'hint-empty';
+      d0.textContent = '载入视频后在这里列出所有分段';
+      segList.appendChild(d0);
+      return;
+    }
+    state.segments.forEach(function (sg, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seg-item' + (sg.pre ? ' pre' : '') +
+        (i === state.cur ? ' active' : '') + (sg.done ? ' done' : '');
+      var status = sg.done ? '已完成' : (i === state.cur ? '当前段' : '待播放');
+      b.innerHTML =
+        '<span class="idx">' + (sg.pre ? '序' : sg.order) + '</span>' +
+        '<span class="seg-main">' +
+          '<span class="seg-time">' + fmt(sg.start) + ' – ' + fmt(sg.end) + '</span>' +
+          '<span class="seg-sub">' + segName(sg) + ' · ' + fmt(sg.end - sg.start) + ' · ' + status + '</span>' +
+        '</span>' +
+        '<span class="playtag">播放</span>';
+      b.addEventListener('click', function () { playSegment(i); });
+      segList.appendChild(b);
+    });
+  }
+
+  function updateBars() {
+    if (!state.duration) {
+      tlHead.style.left = '0%';
+      sbarFill.style.width = '0%';
+      $('tCur').textContent = '0:00';
+      $('tSeg').textContent = '0:00';
+      $('tAll').textContent = '全片 --:--';
+      return;
+    }
+    var t = video.currentTime || 0;
+    tlHead.style.left = (clamp(t / state.duration, 0, 1) * 100) + '%';
+    var sg = state.segments[state.cur];
+    if (sg) {
+      var len = Math.max(0.001, sg.end - sg.start);
+      sbarFill.style.width = (clamp((t - sg.start) / len, 0, 1) * 100) + '%';
+      $('tCur').textContent = fmt(clamp(t - sg.start, 0, len));
+      $('tSeg').textContent = fmt(len);
+      $('tAll').textContent = '全片 ' + fmt(t) + ' / ' + fmt(state.duration);
+      var tag = $('segNow');
+      tag.innerHTML = '<b>' + segName(sg) + '</b>　' + fmt(sg.start) + ' – ' + fmt(sg.end);
+      var lt = $('segLenTag');
+      lt.hidden = false;
+      lt.textContent = '段长 ' + fmt(len);
+    }
+  }
+
+  function renderAll() {
+    renderTimeline();
+    renderList();
+    renderControlsState();
+    renderTally();      // 换段时计数卡要跟着切成那一段的数据
+  }
+
+  function renderControlsState() {
+    var loaded = !!state.duration;
+    var hasSeg = state.segments.length > 0;
+    $('btnPlay').disabled = !loaded;
+    $('btnPrev').disabled = !loaded;
+    $('btnNext').disabled = !loaded || state.cur >= state.segments.length - 1;
+    $('btnExport').disabled = !hasSeg;
+    $('btnBpSet').disabled = !loaded;
+    $('btnBpNow').disabled = !loaded;
+    $('btnBpJump').disabled = !loaded;
+    $('btnMute').innerHTML = video.muted || video.volume === 0 ? ICON_MUTE : ICON_VOL;
+    document.body.classList.toggle('no-video', !loaded && !state.segments.length);
+    syncZoomUI();
+    renderModelButtons();
+  }
+
+  function syncPlayIcon() {
+    $('btnPlay').innerHTML = video.paused ? ICON_PLAY : ICON_PAUSE;
+  }
+
+  /* ---------------- 分段行为 ---------------- */
+  function recompute(keepTime) {
+    var t = keepTime ? (video.currentTime || 0) : 0;
+    state.segments = buildSegments();
+    state.cur = segIndexAt(t);
+    renderAll();
+    updateBPInput();
+  }
+
+  function updateBPInput() {
+    if (document.activeElement !== bpInput) bpInput.value = fmt(state.breakpoint);
+  }
+
+  function setBreakpoint(t, silent) {
+    if (!state.duration) return;
+    state.breakpoint = clamp(t, 0, state.duration);
+    recompute(true);
+    if (!silent) { flash(bpH); saveSettings(); }
+  }
+
+  function flash(node) {
+    node.animate([{ opacity: 1 }, { opacity: .45 }, { opacity: 1 }], { duration: 300, easing: 'ease-out' });
+  }
+
+  function playSegment(i, autoplay) {
+    if (autoplay === undefined) autoplay = true;
+    var sg = state.segments[i];
+    if (!sg) return;
+    state.cur = i;
+    hidePrompt();
+    try {
+      video.currentTime = Math.min(sg.start + 0.02, Math.max(state.duration - 0.05, 0));
+    } catch (e) { /* ignore */ }
+    renderAll();
+    if (autoplay) {
+      var p = video.play();
+      if (p && p.catch) p.catch(function () { /* 自动播放被拦截时忽略 */ });
+    }
+  }
+
+  function goNext() {
+    if (state.cur + 1 >= state.segments.length) return false;
+    playSegment(state.cur + 1);
+    return true;
+  }
+
+  function goPrev() {
+    var sg = state.segments[state.cur];
+    if (sg && video.currentTime - sg.start > 2) {
+      video.currentTime = sg.start + 0.02;
+      hidePrompt();
+      return;
+    }
+    if (state.cur > 0) playSegment(state.cur - 1);
+    else if (state.duration) { video.currentTime = 0; hidePrompt(); }
+  }
+
+  function togglePlay() {
+    if (!state.duration) return;
+    if (video.paused) {
+      var sg = state.segments[state.cur];
+      if (sg && video.currentTime >= sg.end - 0.06) video.currentTime = sg.start + 0.02;
+      hidePrompt();
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+    } else {
+      video.pause();
+    }
+  }
+
+  /* ---------------- 播完一段的询问 ---------------- */
+  function showPrompt() {
+    var sg = state.segments[state.cur];
+    if (!sg) return;
+    var next = state.segments[state.cur + 1];
+    state.promptOpen = true;
+    promptBox.hidden = false;
+    $('promptTitle').textContent = segName(sg) + ' 已播放完 ' + fmt(sg.end - sg.start);
+    if (next) {
+      $('promptDesc').textContent = '下一段：' + fmt(next.start) + ' – ' + fmt(next.end) +
+        '（' + fmt(next.end - next.start) + '）';
+      $('btnNextSeg').disabled = false;
+      $('btnNextSeg').textContent = '播放下一段';
+    } else {
+      $('promptDesc').textContent = '整条视频已经播放到最后一段了。';
+      $('btnNextSeg').disabled = true;
+      $('btnNextSeg').textContent = '没有下一段';
+    }
+    $('chkAutoNext').checked = state.autoNext;
+    if (state.autoNext && next) {
+      setTimeout(function () { if (state.promptOpen) goNext(); }, 900);
+    }
+  }
+
+  function hidePrompt() {
+    state.promptOpen = false;
+    promptBox.hidden = true;
+  }
+
+  /* ---------------- 播放边界守卫 ---------------- */
+  function onTick() {
+    if (!state.duration) return;
+    var sg = state.segments[state.cur];
+    var t = video.currentTime;
+    updateBars();
+    if (!sg) return;
+    if (!video.paused && t >= sg.end - 0.04) {
+      // 播放到本段末尾：暂停并询问是否继续
+      video.pause();
+      try { video.currentTime = Math.min(sg.end - 0.02, state.duration - 0.01); } catch (e) {}
+      sg.done = true;
+      renderAll();
+      updateBars();
+      showPrompt();
+    }
+  }
+
+  /* ---------------- 载入视频 ---------------- */
+  function setLoaded(on) {
+    document.body.classList.toggle('no-video', !on);
+    video.classList.toggle('ready', on);
+    emptyBox.hidden = on;
+    $('fileChip').hidden = !on;
+    $('btnPick2').hidden = !on;
+    if (!on) {
+      $('fileChip').textContent = '';
+      $('segNow').textContent = '未载入视频';
+      $('segLenTag').hidden = true;
+    }
+    renderControlsState();
+  }
+
+  function loadSource(src, name) {
+    state.fileName = name || '';
+    if (src.indexOf('blob:') !== 0) state.file = null;   // 网络视频没法送模型
+    if (state.objectUrl && src.indexOf('blob:') === 0) {
+      try { URL.revokeObjectURL(state.objectUrl); } catch (e) {}
+    }
+    state.objectUrl = src.indexOf('blob:') === 0 ? src : null;
+    video.src = src;
+    video.load();
+    $('fileChip').textContent = name || '网络视频';
+    $('fileChip').hidden = false;
+  }
+
+  function loadFile(file) {
+    if (!file) return;
+    if (!/^video\//.test(file.type) && !/\.(mp4|webm|ogv|mov|m4v|mkv)$/i.test(file.name)) {
+      alert('这看起来不是视频文件：' + file.name);
+      return;
+    }
+    state.file = file;
+    var url = URL.createObjectURL(file);
+    loadSource(url, file.name);
+  }
+
+  video.addEventListener('loadedmetadata', function () {
+    var d = video.duration;
+    if (!isFinite(d) || d <= 0) d = 0;
+    state.duration = d;
+    video.playbackRate = state.speed;
+    state.breakpoint = clamp(savedBreakpoint || 0, 0, d);
+    state.segments = [];
+    state.cur = 0;
+    state.zoom = 1;
+    state.panX = 0;
+    state.panY = 0;
+    setLoaded(true);
+    recompute(false);
+    try { video.currentTime = 0; } catch (e) {}
+    hidePrompt();
+    updateBars();
+    setSpeed(state.speed);
+    applyView();
+    loadTally();      // 每个视频各自保存一份计数
+    loadTally2();
+    syncTrash();      // 每个视频各自一份「清空快照」
+    resetBatch();
+    neResetBatch();
+    model.result = null;
+    loadModelResult();
+    renderTally();
+  });
+
+  video.addEventListener('durationchange', function () {
+    if (isFinite(video.duration) && video.duration > 0 && Math.abs(video.duration - state.duration) > 0.5) {
+      state.duration = video.duration;
+      recompute(true);
+    }
+  });
+
+  video.addEventListener('timeupdate', onTick);
+
+  // 用 rAF 跟随播放进度：6× 时 timeupdate 间隔太粗，容易冲过段尾
+  var rafId = null;
+  function frame() {
+    rafId = null;
+    if (video.paused) return;
+    onTick();
+    if (!video.paused) rafId = requestAnimationFrame(frame);
+  }
+  function startFrame() {
+    if (rafId == null && typeof requestAnimationFrame === 'function') rafId = requestAnimationFrame(frame);
+  }
+  function stopFrame() {
+    if (rafId != null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+
+  video.addEventListener('seeked', function () {
+    // 位置落在当前分段之外（外部跳转）时，把“当前段”跟着重新定位
+    var sg = state.segments[state.cur];
+    if (state.duration && sg && !state.scrub && !state.sDrag) {
+      var t = video.currentTime;
+      if (t < sg.start - 0.35 || t > sg.end + 0.02) {
+        state.cur = segIndexAt(t);
+        if (state.promptOpen) hidePrompt();
+        renderAll();
+      }
+    }
+    updateBars();
+  });
+  video.addEventListener('play', function () { syncPlayIcon(); hidePrompt(); startFrame(); });
+  video.addEventListener('pause', function () { syncPlayIcon(); stopFrame(); });
+  video.addEventListener('ratechange', function () { syncPlayIcon(); });
+  video.addEventListener('volumechange', renderControlsState);
+  video.addEventListener('ended', function () {
+    var sg = state.segments[state.cur];
+    if (sg) sg.done = true;
+    renderAll();
+    updateBars();
+    showPrompt();
+  });
+  video.addEventListener('error', function () {
+    if (!video.currentSrc) return;
+    $('segNow').textContent = '视频无法解码或地址不可用';
+  });
+
+  /* ---------------- 时间轴交互 ---------------- */
+  function ratioOf(e, track) {
+    var r = track.getBoundingClientRect();
+    if (!r.width) return 0;
+    return clamp((e.clientX - r.left) / r.width, 0, 1);
+  }
+
+  function seekGlobal(ratio) {
+    if (!state.duration) return;
+    var t = ratio * state.duration;
+    state.cur = segIndexAt(t);
+    hidePrompt();
+    try { video.currentTime = Math.min(t, Math.max(state.duration - 0.03, 0)); } catch (e) {}
+    renderAll();
+    updateBars();
+  }
+
+  timeline.addEventListener('pointerdown', function (e) {
+    if (!state.duration) return;
+    if (e.target.closest && e.target.closest('.bp-handle')) return;
+    state.scrub = true;
+    try { timeline.setPointerCapture(e.pointerId); } catch (err) {}
+    seekGlobal(ratioOf(e, timeline));
+    e.preventDefault();
+  });
+  timeline.addEventListener('pointermove', function (e) {
+    if (!state.scrub) return;
+    seekGlobal(ratioOf(e, timeline));
+  });
+  function endScrub(e) {
+    if (!state.scrub) return;
+    state.scrub = false;
+    try { timeline.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+  timeline.addEventListener('pointerup', endScrub);
+  timeline.addEventListener('pointercancel', endScrub);
+
+  // 断点拖拽
+  bpH.addEventListener('pointerdown', function (e) {
+    if (!state.duration) return;
+    e.stopPropagation();
+    state.bpDrag = true;
+    try { bpH.setPointerCapture(e.pointerId); } catch (err) {}
+    e.preventDefault();
+  });
+  bpH.addEventListener('pointermove', function (e) {
+    if (!state.bpDrag || !state.duration) return;
+    e.stopPropagation();
+    setBreakpoint(ratioOf(e, timeline) * state.duration, true);
+  });
+  function endBp(e) {
+    if (!state.bpDrag) return;
+    state.bpDrag = false;
+    try { bpH.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+  bpH.addEventListener('pointerup', endBp);
+  bpH.addEventListener('pointercancel', endBp);
+
+  // 段内进度条
+  function seekInSegment(ratio) {
+    var sg = state.segments[state.cur];
+    if (!sg || !state.duration) return;
+    var len = sg.end - sg.start;
+    var t = sg.start + ratio * len;
+    t = clamp(t, sg.start, sg.end - 0.03);
+    hidePrompt();
+    try { video.currentTime = t; } catch (e) {}
+    updateBars();
+  }
+  sbar.addEventListener('pointerdown', function (e) {
+    if (!state.duration) return;
+    state.sDrag = true;
+    sbar.classList.add('dragging');
+    try { sbar.setPointerCapture(e.pointerId); } catch (err) {}
+    seekInSegment(ratioOf(e, sbar));
+    e.preventDefault();
+  });
+  sbar.addEventListener('pointermove', function (e) {
+    if (!state.sDrag) return;
+    seekInSegment(ratioOf(e, sbar));
+  });
+  function endSDrag(e) {
+    if (!state.sDrag) return;
+    state.sDrag = false;
+    sbar.classList.remove('dragging');
+    try { sbar.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+  sbar.addEventListener('pointerup', endSDrag);
+  sbar.addEventListener('pointercancel', endSDrag);
+
+  /* ---------------- 画面缩放 / 框选裁切 ---------------- */
+  function contentBox() {
+    var r = videoBox.getBoundingClientRect();
+    var cw = r.width || 1, ch = r.height || 1;
+    var vw = video.videoWidth || 16, vh = video.videoHeight || 9;
+    var s = Math.min(cw / vw, ch / vh) || 1;
+    return { cw: cw, ch: ch, w: vw * s, h: vh * s };
+  }
+
+  function applyView() {
+    var cb = contentBox();
+    var maxX = Math.max(0, (cb.w * state.zoom - cb.cw) / 2);
+    var maxY = Math.max(0, (cb.h * state.zoom - cb.ch) / 2);
+    state.panX = clamp(state.panX, -maxX, maxX);
+    state.panY = clamp(state.panY, -maxY, maxY);
+    video.style.transform = 'translate(' + state.panX.toFixed(2) + 'px,' + state.panY.toFixed(2) +
+      'px) scale(' + state.zoom.toFixed(3) + ')';
+    videoBox.classList.toggle('zoomed', state.zoom > 1.001);
+    layoutGuide();
+    syncZoomUI();
+  }
+
+  function syncZoomUI() {
+    var on = !!state.duration;
+    var z = state.zoom;
+    $('zoomRange').value = z.toFixed(1);
+    $('zoomRange').disabled = !on;
+    $('zoomVal').textContent = z.toFixed(1) + '×';
+    $('zoomOut').disabled = !on || z <= 1.001;
+    $('zoomIn').disabled = !on || z >= 5.999;
+    $('btnCrop').disabled = !on;
+    $('btnZoomReset').disabled = !on || (z <= 1.001 && !state.panX && !state.panY);
+  }
+
+  // 以容器中心为原点，把 z 缩放到 z2（cx/cy 是锚点，默认画面中心）
+  function zoomTo(z2, cx, cy) {
+    z2 = clamp(z2, 1, 6);
+    if (cx === undefined || cy === undefined) { cx = 0; cy = 0; }
+    var z1 = state.zoom || 1;
+    var ux = (cx - state.panX) / z1;
+    var uy = (cy - state.panY) / z1;
+    state.zoom = z2;
+    state.panX = cx - z2 * ux;
+    state.panY = cy - z2 * uy;
+    applyView();
+  }
+
+  function resetView() {
+    state.zoom = 1; state.panX = 0; state.panY = 0;
+    applyView();
+  }
+
+  // 滚轮缩放（以鼠标位置为锚点）
+  videoBox.addEventListener('wheel', function (e) {
+    if (!state.duration || state.cropMode) return;
+    e.preventDefault();
+    var r = videoBox.getBoundingClientRect();
+    var f = Math.exp(-e.deltaY * 0.0015);
+    zoomTo(state.zoom * f, e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2);
+  }, { passive: false });
+
+  // 拖动平移；轻点则播放/暂停
+  var pan = null;
+  videoBox.addEventListener('pointerdown', function (e) {
+    if (!state.duration || state.cropMode) return;
+    if (e.target.closest && e.target.closest('.prompt')) return;
+    pan = { x: e.clientX, y: e.clientY, px: state.panX, py: state.panY, moved: 0 };
+    videoBox.classList.add('dragging');
+    try { videoBox.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  videoBox.addEventListener('pointermove', function (e) {
+    if (!pan) return;
+    var dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+    pan.moved = Math.max(pan.moved, Math.abs(dx) + Math.abs(dy));
+    if (state.zoom > 1.001) {
+      state.panX = pan.px + dx;
+      state.panY = pan.py + dy;
+      applyView();
+    }
+  });
+  function endPan(e) {
+    if (!pan) return;
+    var clicked = pan.moved < 5;
+    pan = null;
+    videoBox.classList.remove('dragging');
+    try { videoBox.releasePointerCapture(e.pointerId); } catch (err) {}
+    if (clicked && !state.cropMode) togglePlay();
+  }
+  videoBox.addEventListener('pointerup', endPan);
+  videoBox.addEventListener('pointercancel', function () {
+    if (!pan) return;
+    pan = null;
+    videoBox.classList.remove('dragging');
+  });
+
+  var cropSel = null;
+  var cropLayer = $('cropLayer');
+
+  function setCropMode(on) {
+    state.cropMode = on;
+    cropLayer.hidden = !on;
+    $('cropHint').hidden = !on;
+    $('cropRect').style.display = 'none';
+    $('btnCrop').classList.toggle('active', on);
+    $('btnCrop').textContent = on ? '取消框选' : '框选裁切';
+    cropSel = null;
+  }
+
+  function drawCropRect(x1, y1, x2, y2) {
+    var rc = $('cropRect');
+    rc.style.display = 'block';
+    rc.style.left = Math.min(x1, x2) + 'px';
+    rc.style.top = Math.min(y1, y2) + 'px';
+    rc.style.width = Math.abs(x2 - x1) + 'px';
+    rc.style.height = Math.abs(y2 - y1) + 'px';
+  }
+
+  function applyCrop(x, y, w, h) {
+    var r = videoBox.getBoundingClientRect();
+    var sx = x + w / 2 - r.width / 2;      // 选框中心（容器坐标，含当前变换）
+    var sy = y + h / 2 - r.height / 2;
+    var z1 = state.zoom;
+    var ux = (sx - state.panX) / z1;       // 换算回 zoom=1 的内容坐标
+    var uy = (sy - state.panY) / z1;
+    var wc = w / z1, hc = h / z1;
+    var z2 = clamp(Math.max(r.width / wc, r.height / hc), 1, 6);  // 铺满整个画面
+    state.zoom = z2;
+    state.panX = -z2 * ux;
+    state.panY = -z2 * uy;
+    applyView();
+  }
+
+  cropLayer.addEventListener('pointerdown', function (e) {
+    var r = videoBox.getBoundingClientRect();
+    cropSel = { x: e.clientX - r.left, y: e.clientY - r.top, r: r };
+    try { cropLayer.setPointerCapture(e.pointerId); } catch (err) {}
+    drawCropRect(cropSel.x, cropSel.y, cropSel.x, cropSel.y);
+    e.preventDefault();
+  });
+  cropLayer.addEventListener('pointermove', function (e) {
+    if (!cropSel) return;
+    drawCropRect(cropSel.x, cropSel.y, e.clientX - cropSel.r.left, e.clientY - cropSel.r.top);
+  });
+  function endCrop(e) {
+    if (!cropSel) return;
+    var r = cropSel.r, x1 = cropSel.x, y1 = cropSel.y;
+    cropSel = null;
+    try { cropLayer.releasePointerCapture(e.pointerId); } catch (err) {}
+    var x2 = e.clientX - r.left, y2 = e.clientY - r.top;
+    var w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+    $('cropRect').style.display = 'none';
+    if (w < 12 || h < 12) return;
+    applyCrop(Math.min(x1, x2), Math.min(y1, y2), w, h);
+    setCropMode(false);
+  }
+  cropLayer.addEventListener('pointerup', endCrop);
+  cropLayer.addEventListener('pointercancel', function () {
+    cropSel = null;
+    $('cropRect').style.display = 'none';
+  });
+
+  /* ---------------- 计数线 / 识别区域 ---------------- */
+  var guide = {
+    lineOn: true,
+    lineY: 0.65,
+    roiOn: false,
+    roi: { x: 0.08, y: 0.08, w: 0.84, h: 0.84 }
+  };
+  var guideLayer = $('guideLayer'), countLine = $('countLine'), roiBox = $('roiBox');
+  var guideDrag = null;
+
+  // 帧内比例 -> 容器内像素（跟着缩放/平移一起变）
+  function frameToScreen(rx, ry) {
+    var cb = contentBox();
+    var r = videoBox.getBoundingClientRect();
+    var x0 = (r.width - cb.w) / 2 + rx * cb.w;
+    var y0 = (r.height - cb.h) / 2 + ry * cb.h;
+    var cx = r.width / 2, cy = r.height / 2;
+    return {
+      x: cx + state.panX + (x0 - cx) * state.zoom,
+      y: cy + state.panY + (y0 - cy) * state.zoom
+    };
+  }
+
+  // 屏幕坐标 -> 帧内比例
+  function screenToFrame(clientX, clientY) {
+    var cb = contentBox();
+    var r = videoBox.getBoundingClientRect();
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    var ux = cx + (clientX - cx - state.panX) / state.zoom;
+    var uy = cy + (clientY - cy - state.panY) / state.zoom;
+    var left = r.left + (r.width - cb.w) / 2;
+    var top = r.top + (r.height - cb.h) / 2;
+    return { x: (ux - left) / cb.w, y: (uy - top) / cb.h };
+  }
+
+  function layoutGuide() {
+    var show = !!state.duration;
+    guideLayer.hidden = !show;
+    if (!show) return;
+
+    if (guide.lineOn) {
+      countLine.hidden = false;
+      var a = frameToScreen(0, guide.lineY), b = frameToScreen(1, guide.lineY);
+      countLine.style.left = a.x + 'px';
+      countLine.style.width = (b.x - a.x) + 'px';
+      countLine.style.top = a.y + 'px';
+      $('clTag').textContent = '计数线 ' + Math.round(guide.lineY * 100) + '%';
+      $('lineVal').textContent = Math.round(guide.lineY * 100) + '%';
+    } else {
+      countLine.hidden = true;
+    }
+
+    if (guide.roiOn) {
+      roiBox.hidden = false;
+      var p1 = frameToScreen(guide.roi.x, guide.roi.y);
+      var p2 = frameToScreen(guide.roi.x + guide.roi.w, guide.roi.y + guide.roi.h);
+      roiBox.style.left = Math.min(p1.x, p2.x) + 'px';
+      roiBox.style.top = Math.min(p1.y, p2.y) + 'px';
+      roiBox.style.width = Math.abs(p2.x - p1.x) + 'px';
+      roiBox.style.height = Math.abs(p2.y - p1.y) + 'px';
+    } else {
+      roiBox.hidden = true;
+    }
+  }
+
+  // 拖计数线
+  countLine.addEventListener('pointerdown', function (e) {
+    if (!state.duration) return;
+    e.stopPropagation();
+    e.preventDefault();
+    guideDrag = { type: 'line' };
+    try { countLine.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  countLine.addEventListener('pointermove', function (e) {
+    if (!guideDrag || guideDrag.type !== 'line') return;
+    guide.lineY = clamp(screenToFrame(e.clientX, e.clientY).y, 0.02, 0.98);
+    layoutGuide();
+  });
+  function endGuideDrag(e) {
+    if (!guideDrag) return;
+    try { saveSettings(); } catch (err) {}
+    guideDrag = null;
+    saveSettings();
+    try { countLine.releasePointerCapture(e.pointerId); } catch (err) {}
+    try { roiBox.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+  countLine.addEventListener('pointerup', endGuideDrag);
+  countLine.addEventListener('pointercancel', endGuideDrag);
+
+  // 拖识别区域：整体移动 + 四角缩放
+  roiBox.addEventListener('pointerdown', function (e) {
+    if (!state.duration) return;
+    e.stopPropagation();
+    e.preventDefault();
+    var corner = e.target && e.target.getAttribute ? e.target.getAttribute('data-c') : null;
+    guideDrag = {
+      type: corner ? 'resize' : 'move',
+      corner: corner || '',
+      start: screenToFrame(e.clientX, e.clientY),
+      roi0: { x: guide.roi.x, y: guide.roi.y, w: guide.roi.w, h: guide.roi.h }
+    };
+    try { roiBox.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  roiBox.addEventListener('pointermove', function (e) {
+    if (!guideDrag || (guideDrag.type !== 'move' && guideDrag.type !== 'resize')) return;
+    var f = screenToFrame(e.clientX, e.clientY);
+    var r0 = guideDrag.roi0;
+    if (guideDrag.type === 'move') {
+      var dx = f.x - guideDrag.start.x, dy = f.y - guideDrag.start.y;
+      guide.roi.x = clamp(r0.x + dx, 0, 1 - r0.w);
+      guide.roi.y = clamp(r0.y + dy, 0, 1 - r0.h);
+    } else {
+      var x1 = r0.x, y1 = r0.y, x2 = r0.x + r0.w, y2 = r0.y + r0.h;
+      var c = guideDrag.corner;
+      if (c.indexOf('w') >= 0) x1 = clamp(f.x, 0, x2 - 0.05);
+      if (c.indexOf('e') >= 0) x2 = clamp(f.x, x1 + 0.05, 1);
+      if (c.indexOf('n') >= 0) y1 = clamp(f.y, 0, y2 - 0.05);
+      if (c.indexOf('s') >= 0) y2 = clamp(f.y, y1 + 0.05, 1);
+      guide.roi = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    }
+    layoutGuide();
+  });
+  roiBox.addEventListener('pointerup', endGuideDrag);
+  roiBox.addEventListener('pointercancel', endGuideDrag);
+
+  $('chkLine').addEventListener('change', function (e) {
+    guide.lineOn = e.target.checked;
+    layoutGuide();
+    saveSettings();
+  });
+  $('chkRoi').addEventListener('change', function (e) {
+    guide.roiOn = e.target.checked;
+    layoutGuide();
+    saveSettings();
+  });
+  $('btnRoiAll').addEventListener('click', function () {
+    guide.roi = { x: 0, y: 0, w: 1, h: 1 };
+    if (!guide.roiOn) { guide.roiOn = true; $('chkRoi').checked = true; }
+    layoutGuide();
+    saveSettings();
+  });
+
+  /* ---------------- 设置持久化（刷新后线/区域/间隔/倍速都还在） ---------------- */
+  var SETTINGS_KEY = 'vseg.settings';
+  var savedBreakpoint = 0;
+
+  function saveSettings() {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        lineOn: guide.lineOn,
+        lineY: guide.lineY,
+        roiOn: guide.roiOn,
+        roi: guide.roi,
+        segLen: state.segLen,
+        speed: state.speed,
+        modelSpeed: $('modelSpeed').value,
+        breakpoint: state.breakpoint,
+        pic: pic
+      }));
+    } catch (e) {}
+  }
+
+  function restoreSettings() {
+    var s = null;
+    try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch (e) {}
+    if (!s || typeof s !== 'object') { setSpeed(1); return; }
+    if (typeof s.lineY === 'number') guide.lineY = clamp(s.lineY, 0.02, 0.98);
+    guide.lineOn = s.lineOn !== false;
+    guide.roiOn = !!s.roiOn;
+    if (s.roi && typeof s.roi.x === 'number' && typeof s.roi.w === 'number') {
+      guide.roi = {
+        x: clamp(s.roi.x, 0, 1), y: clamp(s.roi.y, 0, 1),
+        w: clamp(s.roi.w, 0.05, 1), h: clamp(s.roi.h, 0.05, 1)
+      };
+    }
+    $('chkLine').checked = guide.lineOn;
+    $('chkRoi').checked = guide.roiOn;
+    if (typeof s.breakpoint === 'number') savedBreakpoint = s.breakpoint;
+    if (s.modelSpeed) $('modelSpeed').value = s.modelSpeed;
+    if (s.segLen) applyLen(s.segLen / 60);
+    if (s.pic && typeof s.pic === 'object') {
+      pic.bright = clamp(Number(s.pic.bright) || 100, 50, 180);
+      pic.contrast = clamp(Number(s.pic.contrast) || 100, 50, 180);
+      pic.light = clamp(Number(s.pic.light) || 100, 40, 220);
+      $('picBright').value = pic.bright;
+      $('picContrast').value = pic.contrast;
+      $('picLight').value = pic.light;
+      applyPicture();
+    }
+    setSpeed(s.speed || 1);
+    layoutGuide();
+  }
+
+  /* ---------------- 画面优化（只改预览，不影响送模型的视频） ---------------- */
+  var pic = { bright: 100, contrast: 100, light: 100 };
+
+  function applyPicture() {
+    var b = pic.bright / 100, c = pic.contrast / 100;
+    var g = 100 / pic.light;    // 光感：>100 提亮中间调，<100 压暗
+    var fe = document.querySelectorAll('#vGamma feFuncR, #vGamma feFuncG, #vGamma feFuncB');
+    for (var i = 0; i < fe.length; i++) fe[i].setAttribute('exponent', g.toFixed(3));
+    var plain = pic.bright === 100 && pic.contrast === 100 && pic.light === 100;
+    if (!video) return;
+    video.style.filter = plain ? 'none'
+      : (Math.abs(g - 1) > 0.004 ? 'url(#vGamma) ' : '') +
+        'brightness(' + b.toFixed(3) + ') contrast(' + c.toFixed(3) + ')';
+    $('picBrightVal').textContent = pic.bright;
+    $('picContrastVal').textContent = pic.contrast;
+    $('picLightVal').textContent = pic.light;
+  }
+
+  function setPic(k, v) {
+    pic[k] = clamp(Math.round(v), k === 'light' ? 40 : 50, k === 'light' ? 220 : 180);
+    applyPicture();
+    try { saveSettings(); } catch (e) {}
+  }
+
+  $('picBright').addEventListener('input', function (e) { setPic('bright', Number(e.target.value)); });
+  $('picContrast').addEventListener('input', function (e) { setPic('contrast', Number(e.target.value)); });
+  $('picLight').addEventListener('input', function (e) { setPic('light', Number(e.target.value)); });
+
+  $('btnPicReset').addEventListener('click', function () {
+    pic = { bright: 100, contrast: 100, light: 100 };
+    $('picBright').value = 100;
+    $('picContrast').value = 100;
+    $('picLight').value = 100;
+    applyPicture();
+    try { saveSettings(); } catch (e) {}
+  });
+
+  $('btnPic').addEventListener('click', function () {
+    var p = $('picPanel');
+    p.hidden = !p.hidden;
+    $('btnPic').classList.toggle('active', !p.hidden);
+  });
+
+  /* ---------------- 人工计数 ---------------- */
+  var tallyInput = $('tallyInput');
+  var tallyGrid = $('tallyGrid');
+  var tiles = {};
+  var batchRecs = [];     // 本批已记账的记录对象，退格时按这个撤
+  var batchCodesArr = []; // 本批已记账的代码序列，用来和输入框内容对齐
+  var lastSegShown = -1;  // 上次渲染的段，换段时清空输入框
+
+  // 清空输入框并结束当前这一批（记录不动）
+  function resetBatch() {
+    tallyInput.value = '';
+    batchRecs = [];
+    batchCodesArr = [];
+    tallyInput.classList.remove('bad');
+  }
+
+  function findVehicle(code) {
+    for (var i = 0; i < VEHICLES.length; i++) {
+      if (VEHICLES[i].code === code) return VEHICLES[i];
+    }
+    return null;
+  }
+
+  // 从左往右尽量多地解出完整代码，返回 {codes, consumed}
+  // 遇到半截代码（如 "d"、"db"）或非法字符就停下
+  function decodePrefixes(str) {
+    var codes = [], i = 0;
+    while (i < str.length) {
+      var hit = null;
+      for (var k = 0; k < VEHICLES.length; k++) {
+        var c = VEHICLES[k].code;
+        if (str.substr(i, c.length) === c) { hit = c; break; }
+      }
+      if (!hit) break;
+      codes.push(hit);
+      i += hit.length;
+    }
+    return { codes: codes, consumed: i };
+  }
+
+  function recSeg(e) {
+    if (!state.segments.length) return 0;
+    if (e.t == null) return 0;
+    return segIndexAt(e.t);
+  }
+
+  function tallyCounts(seg) {
+    var m = {};
+    VEHICLES.forEach(function (v) { m[v.code] = 0; });
+    state.tally.forEach(function (e) {
+      if (!e || m[e.code] == null) return;
+      if (seg != null && recSeg(e) !== seg) return;
+      m[e.code]++;
+    });
+    return m;
+  }
+
+  function segTotal(seg) {
+    var m = tallyCounts(seg), n = 0;
+    VEHICLES.forEach(function (v) { n += m[v.code]; });
+    return n;
+  }
+
+  function neCounts(seg) {
+    var m = {};
+    VEHICLES.forEach(function (v) { m[v.code] = 0; });
+    state.tally2.forEach(function (e) {
+      if (!e || m[e.type] == null || !e.ne) return;
+      if (seg != null && recSeg(e) !== seg) return;
+      m[e.type]++;
+    });
+    return m;
+  }
+
+  // 新能源表里标成「旧」的那部分（比如 dbc），也算进旧数
+  function fuel2Counts(seg) {
+    var m = {};
+    VEHICLES.forEach(function (v) { m[v.code] = 0; });
+    state.tally2.forEach(function (e) {
+      if (!e || m[e.type] == null || e.ne) return;
+      if (seg != null && recSeg(e) !== seg) return;
+      m[e.type]++;
+    });
+    return m;
+  }
+
+  function segTotalAll(seg) {
+    var a = tallyCounts(seg), b = neCounts(seg), c = fuel2Counts(seg), n = 0;
+    VEHICLES.forEach(function (v) { n += a[v.code] + b[v.code] + c[v.code]; });
+    return n;
+  }
+
+  function renderTally(bumpCode) {
+    // 换段 → 输入框清空，本段从头计
+    if (state.cur !== lastSegShown) {
+      lastSegShown = state.cur;
+      resetBatch();
+      neResetBatch();
+    }
+    var m = tallyCounts(state.cur);
+    var m2 = neCounts(state.cur);
+    var m3 = fuel2Counts(state.cur);
+    VEHICLES.forEach(function (v) {
+      var t = tiles[v.code];
+      if (!t) return;
+      var old = m[v.code] + m3[v.code], ne = m2[v.code];
+      var total = old + ne;
+      t.num.textContent = total;
+      t.el.classList.toggle('on', total > 0);
+      if (t.sub) {
+        t.sub.innerHTML = ne > 0
+          ? '(旧' + old + '+新' + ne + ')'
+          : '';
+      }
+    });
+    var here = segTotalAll(state.cur);
+    $('tallyTotal').textContent = (state.segments.length > 1 ? '本段 ' : '') + here + ' 辆';
+    $('btnUndo').disabled = !state.tally.length;
+    $('btnClear').disabled = !state.tally.length && !state.tally2.length;
+    $('btnStat').disabled = !state.tally.length;
+    if (bumpCode && tiles[bumpCode] && tiles[bumpCode].el.animate) {
+      tiles[bumpCode].el.animate(
+        [{ transform: 'scale(1)' }, { transform: 'scale(1.07)' }, { transform: 'scale(1)' }],
+        { duration: 180, easing: 'ease-out' });
+    }
+    renderSegStrip();
+    renderLog();
+    if (model && model.result) renderCompare();
+  }
+
+  // 分段条：一眼看到每段（含上一段）的数量，点一下跳过去
+  function renderSegStrip() {
+    var box = $('segStrip');
+    if (!state.segments.length) { box.innerHTML = ''; return; }
+    var html = '';
+    state.segments.forEach(function (sg, i) {
+      html += '<button class="seg-chip' + (i === state.cur ? ' on' : '') + '" data-seg="' + i + '">' +
+        (sg.pre ? '片头' : '第' + sg.order + '段') + ' <b>' + segTotalAll(i) + '</b></button>';
+    });
+    box.innerHTML = html;
+  }
+
+  var logScope = 'seg';   // 'seg' 只看本段 | 'all' 看全部
+
+  // 记录明细：两张表合在一起按时间倒序，新能源的带「新/旧」小标
+  function renderLog() {
+    var box = $('tallyLog');
+    var scope = logScope === 'all' ? null : state.cur;
+    var rows = [];
+    state.tally.forEach(function (e, i) {
+      if (!e) return;
+      if (scope != null && recSeg(e) !== scope) return;
+      rows.push({ src: 0, i: i, e: e, at: e.at || 0 });
+    });
+    state.tally2.forEach(function (e, j) {
+      if (!e) return;
+      if (scope != null && recSeg(e) !== scope) return;
+      rows.push({ src: 1, i: j, e: e, at: e.at || 0 });
+    });
+    rows.sort(function (a, b) { return (b.at - a.at) || (b.i - a.i); });
+    $('logCount').textContent = rows.length;
+    if (!rows.length) {
+      box.innerHTML = '<div class="hint-empty">' +
+        (scope == null ? '还没有记录' : '本段还没有记录，敲代码开始计') + '</div>';
+      return;
+    }
+    var html = '';
+    rows.forEach(function (r) {
+      var e = r.e;
+      var code = r.src === 0 ? e.code : e.type;
+      var v = findVehicle(code);
+      if (!v) return;
+      var del = r.src === 0 ? ('data-del="' + r.i + '"') : ('data-ndel="' + r.i + '"');
+      var tag = r.src === 1 ? ('<span class="t-tag">' + (e.ne ? '新' : '旧') + '</span>') : '';
+      html += '<div class="trow' + (r.src === 0 && r.i === hlIndex ? ' hl' : '') + '"' +
+        (r.src === 0 ? ' data-idx="' + r.i + '"' : '') + '>' +
+        '<span class="t-idx">' + (r.src === 0 ? (r.i + 1) : '·') + '</span>' +
+        '<span class="t-code" style="background:' + v.color + '1a;color:' + v.color + '">' +
+        (r.src === 1 ? e.code : v.code) + '</span>' + tag +
+        '<span class="t-name">' + v.name + '</span>' +
+        '<span class="t-time">' + (e.t == null ? '--:--' : fmt(e.t)) + '</span>' +
+        '<button class="t-del" ' + del + ' title="删除这条记录">×</button>' +
+        '</div>';
+    });
+    var st = box.scrollTop;
+    box.innerHTML = html;
+    box.scrollTop = st;
+  }
+
+  function gotoSeg(i) {
+    var sg = state.segments[i];
+    if (!sg || !state.duration) return;
+    state.cur = i;
+    hidePrompt();
+    try { video.currentTime = Math.min(sg.start + 0.02, state.duration - 0.03); } catch (e) {}
+    renderAll();
+  }
+
+  function removeAt(i) {
+    if (i < 0 || i >= state.tally.length) return;
+    state.tally.splice(i, 1);
+    saveTally();
+    renderTally();
+  }
+
+  var hlIndex = -1, hlTimer = null;
+  function highlightRow(i) {
+    hlIndex = i;
+    renderLog();
+    if (hlTimer) clearTimeout(hlTimer);
+    hlTimer = setTimeout(function () { hlIndex = -1; renderLog(); }, 2400);
+  }
+
+  // 一键回到第 N 条：视频时间轴 + 输入框都回到当时
+  function jumpToRecord(n) {
+    if (!state.tally.length) { flashNote('还没有记录'); return; }
+    n = Math.round(Number(n));
+    if (!isFinite(n) || n < 1) n = 1;
+    if (n > state.tally.length) n = state.tally.length;
+    var rec = state.tally[n - 1];
+
+    if (rec.t != null && state.duration) {
+      hidePrompt();
+      video.pause();
+      state.cur = segIndexAt(rec.t);
+      try { video.currentTime = Math.min(rec.t, state.duration - 0.03); } catch (e) {}
+      renderAll();
+      updateBars();
+    }
+
+    if (typeof rec.str === 'string') {
+      tallyInput.value = rec.str;
+      batchCodesArr = decodePrefixes(rec.str.toLowerCase()).codes;
+      batchRecs = batchCodesArr.map(function () { return null; });  // 只回显，不回撤历史
+      tallyInput.classList.remove('bad');
+    }
+
+    $('jumpInput').value = n;
+    highlightRow(n - 1);
+    flashNote('回到第 ' + n + ' 条' + (rec.t != null ? ' · ' + fmt(rec.t) : ''));
+  }
+
+  // 点记录行 → 跳到记录时的画面位置
+  function jumpToEntry(i) {
+    var e = state.tally[i];
+    if (!e || e.t == null || !state.duration) return;
+    hidePrompt();
+    state.cur = segIndexAt(e.t);
+    try { video.currentTime = Math.min(e.t, state.duration - 0.03); } catch (err) {}
+    renderAll();
+    updateBars();
+  }
+
+  function pushCodes(codes, strs) {
+    if (!codes || !codes.length) return [];
+    var t = state.duration ? video.currentTime : null;
+    var now = Date.now();
+    var added = codes.map(function (c, i) {
+      return { code: c, t: t, at: now, str: strs && typeof strs[i] === 'string' ? strs[i] : null };
+    });
+    state.tally = state.tally.concat(added);
+    saveTally();
+    renderTally(codes[codes.length - 1]);
+    var v = findVehicle(codes[codes.length - 1]);
+    flashNote('已记 ' + (v ? v.name : '') + (t != null ? ' · ' + fmt(t) : '') +
+      (codes.length > 1 ? '（+' + codes.length + '）' : ''));
+    return added;
+  }
+
+  // 本批撤回到只剩 n 辆车（按记录对象撤，不会误删别处加的）
+  function undoBatchTo(n) {
+    var changed = false;
+    while (batchRecs.length > n) {
+      var rec = batchRecs.pop();
+      if (!rec) continue;                       // 回到第 N 条后的占位，不回撤历史
+      var idx = state.tally.indexOf(rec);
+      if (idx >= 0) { state.tally.splice(idx, 1); changed = true; }
+    }
+    if (changed) { saveTally(); renderTally(); }
+  }
+
+  function undoAllBatch() {
+    for (var i = 0; i < batchRecs.length; i++) {
+      var idx = state.tally.indexOf(batchRecs[i]);
+      if (idx >= 0) state.tally.splice(idx, 1);
+    }
+    batchRecs = [];
+    batchCodesArr = [];
+    saveTally();
+    renderTally();
+  }
+
+  var noteTimer = null;
+  var noteDefault = $('tallyHint').textContent;
+  function flashNote(msg) {
+    var el = $('tallyHint');
+    el.textContent = msg;
+    el.classList.add('ok');
+    if (noteTimer) clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () {
+      el.textContent = noteDefault;
+      el.classList.remove('ok');
+    }, 1600);
+  }
+
+  function addOne(code) { return pushCodes([code]); }
+
+  // s 是否还是某个代码的开头（比如 "d"、"db"）
+  function isPending(s) {
+    if (!s) return true;
+    for (var k = 0; k < VEHICLES.length; k++) {
+      if (VEHICLES[k].code.indexOf(s) === 0) return true;
+    }
+    return false;
+  }
+
+  // 输入框里累积的一串：敲到哪记到哪，框里保留整串（如 11231231dbc）
+  // 以“整串解码结果”为准和已记账的对齐，所以追加、退格、改中间都能自洽
+  function syncBatch() {
+    var v = tallyInput.value.toLowerCase();
+    var d = decodePrefixes(v);
+    var want = d.codes;
+    var have = batchCodesArr;
+    var key = function (arr) { return arr.join('|'); };
+
+    // 每条记录存下“记它那一刻输入框里的整串”，方便之后一键回到第 N 条
+    var acc = 0, strs = [];
+    want.forEach(function (c) { acc += c.length; strs.push(v.slice(0, acc)); });
+
+    if (want.length >= have.length && key(want.slice(0, have.length)) === key(have)) {
+      // 追加（最常见）
+      if (want.length > have.length) {
+        batchRecs = batchRecs.concat(
+          pushCodes(want.slice(have.length), strs.slice(have.length))
+        );
+        batchCodesArr = want.slice();
+      }
+    } else if (want.length < have.length && key(want) === key(have.slice(0, want.length))) {
+      // 退格截断：只撤掉后面多出来的
+      undoBatchTo(want.length);
+      batchCodesArr = want.slice();
+    } else {
+      // 改了前面的内容 → 整批重来（先摘掉本批记录再按新串重记，不会重复）
+      undoAllBatch();
+      if (want.length) {
+        batchRecs = pushCodes(want, strs);
+        batchCodesArr = want.slice();
+      }
+    }
+
+    tallyInput.classList.toggle('bad', !isPending(v.slice(d.consumed)));
+  }
+
+  // 回车 / 记录：确认这一批，输入框清空准备下一批（计数已实时记下）
+  function endBatch() {
+    var v = tallyInput.value.toLowerCase();
+    var left = v.slice(decodePrefixes(v).consumed);
+    if (left) {
+      tallyInput.classList.add('bad');
+      flashNote(isPending(left) ? '「' + left + '」还没输完' : '「' + left + '」不是有效代码');
+      return;
+    }
+    if (!v) return;
+    var n = batchRecs.length;
+    resetBatch();
+    flashNote('本批 ' + n + ' 辆已记账');
+  }
+
+  /* ---------------- 新能源表（独立一张表，模型统计完全不碰它） ---------------- */
+  var neInput = $('neInput');
+  var neRecs = [];
+  var neCodesArr = [];
+  var neNoteTimer = null;
+  var neNoteDefault = $('neHint').textContent;
+
+  function flashNE(msg) {
+    var el = $('neHint');
+    el.textContent = msg;
+    el.classList.add('ok');
+    if (neNoteTimer) clearTimeout(neNoteTimer);
+    neNoteTimer = setTimeout(function () {
+      el.textContent = neNoteDefault;
+      el.classList.remove('ok');
+    }, 1600);
+  }
+
+  function findNE(code) {
+    for (var i = 0; i < NE_CODES.length; i++) {
+      if (NE_CODES[i].code === code) return NE_CODES[i];
+    }
+    return null;
+  }
+
+  function decodeNE(str) {
+    var out = [], i = 0;
+    while (i < str.length) {
+      var hit = null;
+      for (var k = 0; k < NE_CODES.length; k++) {
+        var c = NE_CODES[k].code;
+        if (str.substr(i, c.length) === c) { hit = NE_CODES[k]; break; }
+      }
+      if (!hit) break;
+      out.push(hit);
+      i += hit.code.length;
+    }
+    return { codes: out, consumed: i };
+  }
+
+  function isPendingNE(s) {
+    if (!s) return true;
+    for (var k = 0; k < NE_CODES.length; k++) {
+      if (NE_CODES[k].code.indexOf(s) === 0) return true;
+    }
+    return false;
+  }
+
+  function neResetBatch() {
+    neInput.value = '';
+    neRecs = [];
+    neCodesArr = [];
+    neInput.classList.remove('bad');
+  }
+
+  function pushNE(list, strs) {
+    if (!list || !list.length) return [];
+    var t = state.duration ? video.currentTime : null;
+    var now = Date.now();
+    var added = list.map(function (it, i) {
+      return {
+        type: it.type, ne: !!it.ne, code: it.code, name: it.name,
+        t: t, at: now, str: strs && typeof strs[i] === 'string' ? strs[i] : null
+      };
+    });
+    state.tally2 = state.tally2.concat(added);
+    saveTally2();
+    renderTally();
+    var last = list[list.length - 1];
+    flashNE('已记 ' + last.name + (t != null ? ' · ' + fmt(t) : ''));
+    return added;
+  }
+
+  function neUndoTo(n) {
+    var changed = false;
+    while (neRecs.length > n) {
+      var r = neRecs.pop();
+      if (!r) continue;
+      var idx = state.tally2.indexOf(r);
+      if (idx >= 0) { state.tally2.splice(idx, 1); changed = true; }
+    }
+    if (changed) { saveTally2(); renderTally(); }
+  }
+
+  function neUndoAll() {
+    neRecs.forEach(function (r) {
+      var idx = state.tally2.indexOf(r);
+      if (idx >= 0) state.tally2.splice(idx, 1);
+    });
+    neRecs = [];
+    neCodesArr = [];
+    saveTally2();
+    renderTally();
+  }
+
+  function syncNE() {
+    var v = neInput.value.toLowerCase();
+    var d = decodeNE(v);
+    var want = d.codes;
+    var have = neCodesArr;
+    var key = function (arr) { return arr.map(function (x) { return x.code; }).join('|'); };
+
+    var acc = 0, strs = [];
+    want.forEach(function (c) { acc += c.code.length; strs.push(v.slice(0, acc)); });
+
+    if (want.length >= have.length && key(want.slice(0, have.length)) === key(have)) {
+      if (want.length > have.length) {
+        neRecs = neRecs.concat(pushNE(want.slice(have.length), strs.slice(have.length)));
+        neCodesArr = want.slice();
+      }
+    } else if (want.length < have.length && key(want) === key(have.slice(0, want.length))) {
+      neUndoTo(want.length);
+      neCodesArr = want.slice();
+    } else {
+      neUndoAll();
+      if (want.length) {
+        neRecs = pushNE(want, strs);
+        neCodesArr = want.slice();
+      }
+    }
+
+    neInput.classList.toggle('bad', !isPendingNE(v.slice(d.consumed)));
+  }
+
+  function neEndBatch() {
+    var v = neInput.value.toLowerCase();
+    var left = v.slice(decodeNE(v).consumed);
+    if (left) {
+      neInput.classList.add('bad');
+      flashNE(isPendingNE(left) ? '「' + left + '」还没输完' : '「' + left + '」不是新能源代码');
+      return;
+    }
+    if (!v) return;
+    var n = neRecs.length;
+    neResetBatch();
+    flashNE('本批新能源 ' + n + ' 辆已记账');
+  }
+
+  function neKey() { return 'vseg.tally2:' + (state.fileName || 'default'); }
+
+  function saveTally2() {
+    try { localStorage.setItem(neKey(), JSON.stringify(state.tally2)); } catch (e) {}
+  }
+
+  function loadTally2() {
+    var arr = [];
+    try {
+      var s = localStorage.getItem(neKey());
+      var v = s ? JSON.parse(s) : null;
+      if (Array.isArray(v)) {
+        for (var i = 0; i < v.length; i++) {
+          var it = v[i];
+          if (!it || !findVehicle(it.type)) continue;
+          var nc = findNE(it.code);
+          arr.push({
+            type: it.type,
+            ne: it.ne !== false,
+            code: it.code || it.type,
+            name: it.name || (nc ? nc.name : '新能源'),
+            t: typeof it.t === 'number' ? it.t : null,
+            at: it.at || null,
+            str: typeof it.str === 'string' ? it.str : null
+          });
+        }
+      }
+    } catch (e) { arr = []; }
+    state.tally2 = arr;
+  }
+
+  neInput.addEventListener('input', syncNE);
+  neInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); neEndBatch(); return; }
+    if (e.key === 'Escape') { neResetBatch(); e.stopPropagation(); return; }
+    if (e.key === ' ') { e.preventDefault(); togglePlay(); return; }
+  });
+  $('neAdd').addEventListener('click', function () {
+    neEndBatch();
+    try { neInput.focus(); } catch (e) {}
+  });
+
+  function removeNEAt(i) {
+    if (i < 0 || i >= state.tally2.length) return;
+    state.tally2.splice(i, 1);
+    saveTally2();
+    renderTally();
+  }
+
+  function buildTally() {
+    tallyGrid.innerHTML = '';
+    VEHICLES.forEach(function (v) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tile';
+      b.dataset.code = v.code;
+      b.title = v.code + ' = ' + v.name + '（点击 +1）';
+      var c = document.createElement('span');
+      c.className = 'tile-code';
+      c.textContent = v.code;
+      var nm = document.createElement('span');
+      nm.className = 'tile-main';
+      var nameEl = document.createElement('span');
+      nameEl.className = 'tile-name';
+      nameEl.textContent = v.name;
+      var subEl = document.createElement('span');
+      subEl.className = 'tile-sub';
+      subEl.textContent = '';
+      nm.appendChild(nameEl);
+      nm.appendChild(subEl);
+      var num = document.createElement('span');
+      num.className = 'tile-num';
+      num.textContent = '0';
+      b.appendChild(c);
+      b.appendChild(nm);
+      b.appendChild(num);
+      b.addEventListener('click', function () { addOne(v.code); });
+      tallyGrid.appendChild(b);
+      tiles[v.code] = { el: b, num: num, sub: subEl };
+    });
+  }
+
+  function tallyKey() { return 'vseg.tally:' + (state.fileName || 'default'); }
+
+  function saveTally() {
+    try { localStorage.setItem(tallyKey(), JSON.stringify(state.tally)); } catch (e) {}
+  }
+
+  function loadTally() {
+    var arr = [];
+    try {
+      var s = localStorage.getItem(tallyKey());
+      var v = s ? JSON.parse(s) : null;
+      if (Array.isArray(v)) {
+        for (var i = 0; i < v.length; i++) {
+          var it = v[i];
+          if (typeof it === 'string') {                       // 兼容旧版本存的纯代码
+            if (findVehicle(it)) arr.push({ code: it, t: null, at: null });
+          } else if (it && findVehicle(it.code)) {
+            arr.push({
+              code: it.code,
+              t: typeof it.t === 'number' ? it.t : null,
+              at: it.at || null
+            });
+          }
+        }
+      }
+    } catch (e) { arr = []; }
+    state.tally = arr;
+  }
+
+  tallyInput.addEventListener('input', syncBatch);
+
+  tallyInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); endBatch(); return; }
+    if (e.key === 'Escape') {
+      resetBatch();
+      e.stopPropagation();
+      return;
+    }
+    if (e.key === ' ') { e.preventDefault(); togglePlay(); return; }   // 空格 = 播放/暂停
+  });
+
+  $('tallyAdd').addEventListener('click', function () {
+    endBatch();
+    try { tallyInput.focus(); } catch (e) {}
+  });
+
+  // 记录行：点行跳转，点 × 删除这一条
+  $('tallyLog').addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var del = t.closest('[data-del]');
+    if (del) {
+      e.stopPropagation();
+      removeAt(parseInt(del.dataset.del, 10));
+      return;
+    }
+    var ndel = t.closest('[data-ndel]');
+    if (ndel) {
+      e.stopPropagation();
+      removeNEAt(parseInt(ndel.dataset.ndel, 10));
+      return;
+    }
+    var row = t.closest('[data-idx]');
+    if (row) jumpToEntry(parseInt(row.dataset.idx, 10));
+  });
+
+  $('btnUndo').addEventListener('click', function () {
+    if (!state.tally.length) return;
+    state.tally.pop();
+    saveTally();
+    renderTally();
+  });
+
+  $('btnJump').addEventListener('click', function () { jumpToRecord($('jumpInput').value); });
+  $('jumpInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); jumpToRecord(e.target.value); }
+  });
+
+  $('segStrip').addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var chip = t.closest('[data-seg]');
+    if (chip) gotoSeg(parseInt(chip.getAttribute('data-seg'), 10));
+  });
+
+  $('scopeSeg').addEventListener('click', function () {
+    logScope = 'seg';
+    $('scopeSeg').classList.add('on');
+    $('scopeAll').classList.remove('on');
+    renderLog();
+  });
+  $('scopeAll').addEventListener('click', function () {
+    logScope = 'all';
+    $('scopeAll').classList.add('on');
+    $('scopeSeg').classList.remove('on');
+    renderLog();
+  });
+
+  /* ---------------- 清空快照（自动备份 + 撤销清空） ---------------- */
+  var TRASH_MAX = 10;
+  var trashCache = [];
+
+  function trashKey() { return 'vseg.trash:' + (state.fileName || 'default'); }
+
+  function loadTrash() {
+    try {
+      var v = JSON.parse(localStorage.getItem(trashKey()) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
+
+  // 空间不足时从最旧的一份开始丢，保证新快照一定写得进去
+  function saveTrash(arr) {
+    while (arr.length) {
+      try { localStorage.setItem(trashKey(), JSON.stringify(arr)); return true; }
+      catch (e) { arr.pop(); }
+    }
+    try { localStorage.removeItem(trashKey()); } catch (e) {}
+    return false;
+  }
+
+  function updateTrashUI() {
+    var n = trashCache.length;
+    $('btnRestoreClear').disabled = !n;
+    $('snapTip').textContent = n ? ('已存 ' + n + ' 份清空备份') : '清空前会自动留一份';
+  }
+
+  function syncTrash() { trashCache = loadTrash(); updateTrashUI(); }
+
+  function pushTrash() {
+    if (!state.tally.length && !state.tally2.length) return false;
+    trashCache.unshift({
+      at: Date.now(),
+      tally: JSON.parse(JSON.stringify(state.tally)),
+      tally2: JSON.parse(JSON.stringify(state.tally2))
+    });
+    if (trashCache.length > TRASH_MAX) trashCache.length = TRASH_MAX;
+    saveTrash(trashCache);
+    updateTrashUI();
+    return true;
+  }
+
+  $('btnRestoreClear').addEventListener('click', function () {
+    var arr = loadTrash();
+    if (!arr.length) { syncTrash(); return; }
+    var snap = arr.shift();
+    state.tally = Array.isArray(snap.tally) ? snap.tally : [];
+    state.tally2 = Array.isArray(snap.tally2) ? snap.tally2 : [];
+    trashCache = arr;
+    saveTrash(arr);
+    updateTrashUI();
+    saveTally();
+    saveTally2();
+    resetBatch();
+    neResetBatch();
+    renderTally();
+    var d = new Date(snap.at);
+    var p = function (m) { return (m < 10 ? '0' : '') + m; };
+    flashNote('已找回 ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) +
+      ' 清空前的数据（' + state.tally.length + ' + ' + state.tally2.length + ' 条）');
+  });
+
+  var clearArmed = false, clearTimer = null;
+  function resetClearBtn() {
+    clearArmed = false;
+    if (clearTimer) { clearTimeout(clearTimer); clearTimer = null; }
+    $('btnClear').textContent = '清空';
+    $('btnClear').classList.add('ghost');
+    $('btnClear').classList.remove('danger');
+  }
+  $('btnClear').addEventListener('click', function () {
+    if (!state.tally.length && !state.tally2.length) return;
+    if (!clearArmed) {
+      clearArmed = true;
+      $('btnClear').textContent = '确认清空';
+      $('btnClear').classList.remove('ghost');
+      $('btnClear').classList.add('danger');
+      clearTimer = setTimeout(resetClearBtn, 3000);
+      return;
+    }
+    resetClearBtn();
+    var kept = pushTrash();
+    state.tally = [];
+    state.tally2 = [];
+    neResetBatch();
+    saveTally();
+    saveTally2();
+    renderTally();
+    if (kept) flashNote('已清空，需要的话点「撤销清空」找回');
+  });
+
+  $('btnBackup').addEventListener('click', function () {
+    var data = {
+      file: state.fileName || '',
+      at: new Date().toISOString(),
+      tally: state.tally,
+      tally2: state.tally2
+    };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (state.fileName ? state.fileName.replace(/\.[^.]+$/, '') : 'video') + '_计数备份.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+    flashNote('已导出备份：旧表 ' + state.tally.length + ' 条 / 新能源 ' + state.tally2.length + ' 条');
+  });
+
+  function statText() {
+    var m = tallyCounts();
+    var lines = VEHICLES.map(function (v) { return v.name + ' ' + m[v.code]; });
+    lines.push('合计 ' + state.tally.length);
+    return lines.join('\n');
+  }
+
+  function openStat() {
+    var segIdx = state.cur;
+    var man = tallyCounts(segIdx);
+    var ne = neCounts(segIdx);
+    var fuel2 = fuel2Counts(segIdx);
+    var total = 0, neTotal = 0;
+    VEHICLES.forEach(function (v) { total += man[v.code] + ne[v.code] + fuel2[v.code]; neTotal += ne[v.code]; });
+    var sg = state.segments[segIdx];
+    var title = sg ? (sg.pre ? '片头' : '第 ' + sg.order + ' 段') : '全部';
+
+    var html = '<div class="stat-sub">' + title + (sg ? '　' + fmt(sg.start) + ' – ' + fmt(sg.end) : '') + '</div>';
+    html += VEHICLES.map(function (v) {
+      var o = (man[v.code] || 0) + (fuel2[v.code] || 0), n = ne[v.code] || 0, c = o + n;
+      var pct = total ? Math.round(c / total * 100) : 0;
+      return '<div class="stat-row">' +
+        '<span class="s-code" style="background:' + v.color + '1f;color:' + v.color + '">' + v.code + '</span>' +
+        '<span class="s-name">' + v.name + '</span>' +
+        '<span class="s-bar"><i style="width:' + pct + '%;background:' + v.color + '"></i></span>' +
+        '<span class="s-num">' + c + (n > 0 ? '<em>' + o + '+' + n + '</em>' : '') + '</span></div>';
+    }).join('');
+    html += '<div class="stat-total"><span>本段合计（其中新能源 ' + neTotal + '）</span>' +
+      '<span><b>' + total + '</b> 辆</span></div>';
+    $('statTable').innerHTML = html;
+
+    var segHtml = '';
+    if (state.segments.length > 1) {
+      segHtml = '<div class="stat-sub" style="margin-top:16px">各段汇总</div>' +
+        '<div class="segsum-head"><span>分段</span><span>时间</span><span>人工</span><span>模型</span></div>';
+      state.segments.forEach(function (s, i) {
+        var mm = segTotalAll(i);
+        var mo = model.result ? sumModelSeg(i) : null;
+        segHtml += '<div class="segsum-row' + (i === segIdx ? ' on' : '') + '">' +
+          '<span class="ss-name">' + (s.pre ? '片头' : '第' + s.order + '段') + '</span>' +
+          '<span class="ss-time">' + fmt(s.start) + '–' + fmt(s.end) + '</span>' +
+          '<span class="ss-num">' + mm + '</span>' +
+          '<span class="ss-num">' + (mo == null ? '—' : mo) + '</span></div>';
+      });
+      var allMan = 0;
+      state.segments.forEach(function (s, i) { allMan += segTotalAll(i); });
+      segHtml += '<div class="segsum-row total"><span class="ss-name">总计</span><span class="ss-time"></span>' +
+        '<span class="ss-num">' + allMan + '</span>' +
+        '<span class="ss-num">' + (model.result ? modelAllTotal() : '—') + '</span></div>';
+    }
+    $('statSegs').innerHTML = segHtml;
+
+    $('statMeta').textContent = state.duration ? ('当前视频位置 ' + fmt(video.currentTime)) : '尚未载入视频';
+    $('countModal').hidden = false;
+  }
+
+  function sumModelSeg(i) {
+    var m = modelSegCounts(i), n = 0;
+    VEHICLES.forEach(function (v) { n += m[v.code]; });
+    return n;
+  }
+
+  function closeStat() { $('countModal').hidden = true; }
+
+  $('btnStat').addEventListener('click', openStat);
+  $('modalClose').addEventListener('click', closeStat);
+  $('btnModalOk').addEventListener('click', closeStat);
+  $('countModal').addEventListener('click', function (e) {
+    if (e.target === $('countModal')) closeStat();
+  });
+
+  // ---- 一键复制：制表符分隔、不带表头，直接粘进表格 ----
+  // 总表 7 列：其它小型客车 / 其它大型客车 / 公交车 / 出租车 / 小型货车 / 大型货车 / 摩托车
+  var EXPORT_ORDER = ['1', 'dbc', 'gjc', '2', 'xhc', 'dhc', '3'];
+  // 新能源表 5 列：小客车 / 大客车 / 出租车 / 货车(小货+大货) / 公交车
+  var EXPORT_ORDER_NE = [['1'], ['dbc'], ['2'], ['xhc', 'dhc'], ['gjc']];
+
+  function tableText(kind) {
+    var seg = state.cur;
+    var a = tallyCounts(seg), b = fuel2Counts(seg), c = neCounts(seg);
+    if (kind === 'ne') {
+      return EXPORT_ORDER_NE.map(function (codes) {
+        var n = 0;
+        codes.forEach(function (code) { n += (c[code] || 0); });
+        return n;
+      }).join('\t');
+    }
+    return EXPORT_ORDER.map(function (code) {
+      return (a[code] || 0) + (b[code] || 0) + (c[code] || 0);
+    }).join('\t');
+  }
+
+  function copyTable(kind, btn) {
+    var txt = tableText(kind);
+    var label = btn.textContent;
+    var done = function () {
+      btn.textContent = '已复制';
+      setTimeout(function () { btn.textContent = label; }, 1200);
+      flashNote('已复制' + (kind === 'ne' ? '新能源表' : '总表') + '：' + txt.split('\t').join('·'));
+    };
+    var fallback = function () {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      } catch (e) {}
+      done();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(done, fallback);
+    } else fallback();
+  }
+
+  $('btnCopyStat').addEventListener('click', function () { copyTable('all', $('btnCopyStat')); });
+  $('btnCopyNE').addEventListener('click', function () { copyTable('ne', $('btnCopyNE')); });
+
+  /* ---------------- 模型计数（本机 Python 服务） ---------------- */
+  var MODEL_BASE = 'http://127.0.0.1:8502';
+  // 网页这边的车种 <-> 模型 7 类的对应关系
+  var MODEL_MAP = {
+    '1': '其它小型客车',
+    '2': '出租车',
+    '3': '摩托车',
+    'dbc': '其它大型客车',
+    'dhc': '大型货车',
+    'xhc': '小型货车',
+    'gjc': '公交车'
+  };
+  var model = { ok: false, device: '', jobId: null, result: null, timer: null, busy: false };
+
+  function setModelBadge(text, kind) {
+    var el = $('modelBadge');
+    el.textContent = text;
+    el.className = 'count' + (kind ? ' ' + kind : '');
+  }
+
+  function renderModelButtons() {
+    $('btnModelRun').disabled = model.busy || !state.duration;
+    $('btnModelStop').disabled = !model.jobId;
+  }
+
+  function showProgress(p, text) {
+    $('modelProgress').hidden = false;
+    $('mpFill').style.width = Math.round(clamp(p, 0, 1) * 100) + '%';
+    $('mpText').textContent = text || '';
+  }
+
+  function checkModel() {
+    setModelBadge('检测中…', 'warn');
+    $('modelNote').textContent = '正在连接 ' + MODEL_BASE + ' …';
+    var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    var to = setTimeout(function () { if (ctrl) ctrl.abort(); }, 4000);
+    fetch(MODEL_BASE + '/health', { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        clearTimeout(to);
+        model.device = j.device || '';
+        if (j.model_ready) {
+          model.ok = true;
+          setModelBadge('已连接', 'ok');
+          $('modelNote').textContent = '已连接本机模型 · ' + (j.device || 'CPU') +
+            ' · ' + (j.weights || '') + '，规则与你的识别系统一致。';
+        } else {
+          model.ok = false;
+          setModelBadge(j.model_loading ? '加载中' : '未就绪', 'warn');
+          $('modelNote').textContent = j.model_error || '模型正在加载，十几秒后再点「重新检测」。';
+        }
+        renderModelButtons();
+      })
+      .catch(function () {
+        clearTimeout(to);
+        model.ok = false;
+        setModelBadge('未连接', 'bad');
+        $('modelNote').innerHTML = '连不上 ' + MODEL_BASE + '。双击 <b>D:\\车型识别\\启动模型服务.bat</b>，' +
+          '看到「就绪」后点「重新检测」。';
+        renderModelButtons();
+      });
+  }
+
+  function roiParam() {
+    var r = guide.roi;
+    var pts = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
+    return pts.map(function (p) { return p[0].toFixed(4) + ',' + p[1].toFixed(4); }).join(';');
+  }
+
+  function modelFail(msg) {
+    model.busy = false;
+    model.jobId = null;
+    if (model.timer) { clearTimeout(model.timer); model.timer = null; }
+    renderModelButtons();
+    showProgress(0, '失败：' + msg);
+    setModelBadge('出错', 'bad');
+  }
+
+  function runModel() {
+    if (model.jobId || model.busy) return;
+    if (!model.ok) { checkModel(); flashNote('还没连上模型服务'); return; }
+    if (!state.file) { flashNote('只有本地视频文件能送模型识别'); return; }
+
+    var q = new URLSearchParams();
+    q.set('name', state.file.name);
+    q.set('line', guide.lineY.toFixed(3));
+    q.set('speed', $('modelSpeed').value || '2');
+    q.set('seg', '5');
+    if (guide.roiOn && (guide.roi.w < 0.999 || guide.roi.h < 0.999)) q.set('roi', roiParam());
+
+    model.busy = true;
+    model.result = null;
+    $('cmpTable').innerHTML = '';
+    renderModelButtons();
+    showProgress(0, '上传视频…');
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', MODEL_BASE + '/jobs?' + q.toString());
+    xhr.upload.onprogress = function (e) {
+      if (!e.lengthComputable) return;
+      var pct = Math.round(e.loaded / e.total * 100);
+      showProgress(e.loaded / e.total, '上传视频 ' + pct + '%');
+    };
+    xhr.onload = function () {
+      model.busy = false;
+      var j = null;
+      try { j = JSON.parse(xhr.responseText); } catch (e) {}
+      if (!j || !j.id) { modelFail((j && j.error) || '服务没有返回任务号'); return; }
+      model.jobId = j.id;
+      renderModelButtons();
+      showProgress(0, '已上传，模型开始识别…');
+      pollModel();
+    };
+    xhr.onerror = function () { model.busy = false; modelFail('上传失败，模型服务可能没开'); };
+    xhr.send(state.file);
+  }
+
+  function pollModel() {
+    if (!model.jobId) return;
+    if (model.timer) clearTimeout(model.timer);
+    model.timer = setTimeout(function () {
+      fetch(MODEL_BASE + '/jobs/' + model.jobId, { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.error && !j.counts) { modelFail(j.error); return; }
+          var p = j.progress || 0;
+          showProgress(p, j.log || ('识别中 ' + Math.round(p * 100) + '%'));
+          if (j.done) {
+            model.jobId = null;
+            model.timer = null;
+            model.busy = false;
+            model.result = j;
+            saveModelResult();
+            showProgress(1, '完成：模型数出 ' + (j.total || 0) + ' 辆，用时 ' + (j.elapsed || 0) + 's');
+            renderModelButtons();
+            renderCompare();
+          } else {
+            pollModel();
+          }
+        })
+        .catch(function () { modelFail('和模型服务断开连接'); });
+    }, 1200);
+  }
+
+  function stopModel() {
+    if (!model.jobId) return;
+    fetch(MODEL_BASE + '/jobs/' + model.jobId + '/stop', { method: 'POST' }).catch(function () {});
+    showProgress(0, '正在停止…');
+  }
+
+  // 模型识别结果按视频存起来，刷新/切段都不用重跑
+  function modelKey() { return 'vseg.model:' + (state.fileName || 'default'); }
+
+  function saveModelResult() {
+    try {
+      if (!model.result || !model.result.events) return;
+      localStorage.setItem(modelKey(), JSON.stringify({
+        at: Date.now(),
+        total: model.result.total || model.result.events.length,
+        events: model.result.events.slice(0, 20000)
+      }));
+    } catch (e) {}
+  }
+
+  function loadModelResult() {
+    var s2 = null;
+    try { s2 = JSON.parse(localStorage.getItem(modelKey()) || 'null'); } catch (e) {}
+    if (s2 && Array.isArray(s2.events)) {
+      model.result = { events: s2.events, total: s2.total || s2.events.length, restored: true };
+      renderCompare();
+      return true;
+    }
+    return false;
+  }
+
+  function renderCompare() {
+    var box = $('cmpTable');
+    var res = model.result;
+    if (!res || !res.events) { box.innerHTML = ''; return; }
+    var segName = state.segments[state.cur]
+      ? (state.segments[state.cur].pre ? '片头' : '第 ' + state.segments[state.cur].order + ' 段') : '';
+    var man = tallyCounts(state.cur);
+    var mod = modelSegCounts(state.cur);
+    var ne = neCounts(state.cur);
+    var fuel2 = fuel2Counts(state.cur);
+    var html = '<div class="cmp-head"><span>' + segName + '</span><span>人工</span><span>模型</span><span>差</span></div>';
+    var sumMan = 0, sumMod = 0, sumAbs = 0;
+    VEHICLES.forEach(function (v) {
+      var m = (man[v.code] || 0) + (ne[v.code] || 0) + (fuel2[v.code] || 0);   // 人工 = 旧表 + 新能源表(含其中的旧)
+      var d = mod[v.code] || 0;
+      sumMan += m;
+      sumMod += d;
+      sumAbs += Math.abs(m - d);
+      var diff = d - m;
+      var cls = diff === 0 ? 'zero' : (diff > 0 ? 'up' : 'down');
+      html += '<div class="cmp-row">' +
+        '<span class="c-name"><i class="c-dot" style="background:' + v.color + '"></i>' + v.name + '</span>' +
+        '<span class="c-man">' + m + '</span>' +
+        '<span class="c-mod">' + d + '</span>' +
+        '<span class="c-diff ' + cls + '">' + (diff > 0 ? '+' + diff : diff) + '</span>' +
+        '</div>';
+    });
+    var acc = sumMan ? Math.max(0, 100 - sumAbs / sumMan * 100) : 0;
+    html += '<div class="cmp-total"><span>本段 ' + sumMan + ' / ' + sumMod + '</span>' +
+      '<span>准确率 <b>' + acc.toFixed(1) + '%</b></span></div>';
+    box.innerHTML = html;
+  }
+
+  // 模型事件按网页自己的分段归类（时间点来自识别结果，与切段方式无关）
+  var MODEL_TO_CODE = {};
+  VEHICLES.forEach(function (v) { MODEL_TO_CODE[MODEL_MAP[v.code]] = v.code; });
+
+  function modelSegCounts(segIdx) {
+    var out = {};
+    VEHICLES.forEach(function (v) { out[v.code] = 0; });
+    var ev = (model.result && model.result.events) || [];
+    for (var i = 0; i < ev.length; i++) {
+      var code = MODEL_TO_CODE[ev[i].y];
+      if (!code) continue;
+      var s = state.segments.length ? segIndexAt(ev[i].t) : 0;
+      if (s !== segIdx) continue;
+      out[code]++;
+    }
+    return out;
+  }
+
+  function modelAllTotal() {
+    return model.result && model.result.events ? model.result.events.length : 0;
+  }
+
+  $('btnModelRun').addEventListener('click', runModel);
+  $('btnModelStop').addEventListener('click', stopModel);
+  $('btnModelCheck').addEventListener('click', checkModel);
+  $('btnModelWatch').addEventListener('click', function () {
+    window.open('模型监看.html', '_blank');
+  });
+
+  /* ---------------- 控件 ---------------- */
+  $('btnPlay').addEventListener('click', togglePlay);
+  $('btnNext').addEventListener('click', goNext);
+  $('btnPrev').addEventListener('click', goPrev);
+  $('btnMute').addEventListener('click', function () { video.muted = !video.muted; });
+
+  // 画面缩放控件
+  $('zoomIn').addEventListener('click', function () { zoomTo(state.zoom + 0.5); });
+  $('zoomOut').addEventListener('click', function () { zoomTo(state.zoom - 0.5); });
+  $('btnZoomReset').addEventListener('click', function () {
+    resetView();
+    if (state.cropMode) setCropMode(false);
+  });
+  $('btnCrop').addEventListener('click', function () { setCropMode(!state.cropMode); });
+  $('zoomRange').addEventListener('input', function (e) {
+    var z = clamp(parseFloat(e.target.value) || 1, 1, 6);
+    var k = z / (state.zoom || 1);
+    state.panX = state.panX * k;   // 缩放时保持画面中心处的相对位置
+    state.panY = state.panY * k;
+    state.zoom = z;
+    applyView();
+  });
+
+  $('btnPick').addEventListener('click', function () { $('file').click(); });
+  $('btnPick2').addEventListener('click', function () { $('file').click(); });
+  $('file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (f) loadFile(f);
+    e.target.value = '';
+  });
+
+  $('btnUrl').addEventListener('click', function () {
+    var u = $('urlInput').value.trim();
+    if (!u) return;
+    loadSource(u, u.split('/').pop() || '网络视频');
+  });
+  $('urlInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') $('btnUrl').click();
+  });
+
+  // 拖放
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    videoBox.addEventListener(ev, function (e) {
+      e.preventDefault();
+      emptyBox.classList.add('drag');
+    });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    videoBox.addEventListener(ev, function (e) {
+      e.preventDefault();
+      emptyBox.classList.remove('drag');
+    });
+  });
+  videoBox.addEventListener('drop', function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('drop', function (e) { e.preventDefault(); });
+
+  // 断点输入
+  function applyBPInput() {
+    var t = parseTime(bpInput.value);
+    if (t === null) { bpInput.value = fmt(state.breakpoint); return; }
+    if (!state.duration) return;
+    setBreakpoint(t);
+    bpInput.value = fmt(state.breakpoint);
+  }
+  $('btnBpSet').addEventListener('click', applyBPInput);
+  bpInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') applyBPInput(); });
+  bpInput.addEventListener('blur', function () { if (state.duration) bpInput.value = fmt(state.breakpoint); });
+  $('btnBpNow').addEventListener('click', function () {
+    if (!state.duration) return;
+    setBreakpoint(video.currentTime);
+  });
+  $('btnBpJump').addEventListener('click', function () {
+    if (!state.duration) return;
+    state.cur = segIndexAt(state.breakpoint);
+    hidePrompt();
+    try { video.currentTime = Math.min(state.breakpoint + 0.02, state.duration - 0.03); } catch (e) {}
+    renderAll();
+    updateBars();
+  });
+
+  // 分段间隔
+  function applyLen(min) {
+    if (!isFinite(min) || min < 0.5) { lenInput.value = state.segLen / 60; return; }
+    state.segLen = Math.round(min * 60 * 1000) / 1000;
+    lenInput.value = min;
+    if (state.duration) recompute(true);
+    saveSettings();
+    document.querySelectorAll('#lenChips .chip').forEach(function (c) {
+      c.classList.toggle('active', Math.abs(parseFloat(c.dataset.min) * 60 - state.segLen) < 0.01);
+    });
+  }
+  $('btnLenSet').addEventListener('click', function () { applyLen(parseFloat(lenInput.value)); });
+  lenInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') applyLen(parseFloat(lenInput.value)); });
+
+  [1, 3, 5, 10, 15].forEach(function (m) {
+    var c = document.createElement('button');
+    c.type = 'button';
+    c.className = 'chip' + (m === 5 ? ' active' : '');
+    c.dataset.min = m;
+    c.textContent = m + ' 分钟';
+    c.addEventListener('click', function () { applyLen(m); });
+    $('lenChips').appendChild(c);
+  });
+
+  // 倍速（滑条，0.5–6×，精确到 0.1）
+  function setSpeed(v) {
+    v = Math.round(clamp(Number(v) || 1, 0.5, 6) * 10) / 10;
+    state.speed = v;
+    video.playbackRate = v;
+    var rng = $('speedRange');
+    if (rng) rng.value = v.toFixed(1);
+    var lab = $('speedVal');
+    if (lab) lab.textContent = v.toFixed(1) + '\u00d7';
+    $('speedHint').hidden = v <= 4;
+    try { saveSettings(); } catch (e) {}
+  }
+  function stepSpeed(dir) { setSpeed(state.speed + dir * 0.1); }
+  $('speedRange').addEventListener('input', function (e) {
+    setSpeed(parseFloat(e.target.value));
+  });
+
+  // 询问框按钮
+  $('btnNextSeg').addEventListener('click', function () { goNext(); });
+  $('btnReplaySeg').addEventListener('click', function () { playSegment(state.cur, true); });
+  $('btnStay').addEventListener('click', hidePrompt);
+  $('chkAutoNext').addEventListener('change', function (e) {
+    state.autoNext = e.target.checked;
+  });
+
+  // 导出
+  $('btnExport').addEventListener('click', function () {
+    if (!state.segments.length) return;
+    var rows = [['序号', '类型', '开始', '结束', '时长(秒)', '开始(秒)']];
+    state.segments.forEach(function (sg) {
+      rows.push([
+        sg.order,
+        sg.pre ? '片头' : '正片',
+        fmt(sg.start),
+        fmt(sg.end),
+        (sg.end - sg.start).toFixed(1),
+        sg.start.toFixed(2)
+      ]);
+    });
+    var csv = '\ufeff' + rows.map(function (r) { return r.join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (state.fileName ? state.fileName.replace(/\.[^.]+$/, '') : 'video') + '_分段清单.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+  });
+
+  /* ---------------- 键盘 ---------------- */
+  document.addEventListener('keydown', function (e) {
+    var tag = (e.target && e.target.tagName) || '';
+    if (/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+    if (e.key === 'Escape') {
+      if (!$('countModal').hidden) { closeStat(); return; }
+      if (state.cropMode) setCropMode(false);
+      else hidePrompt();
+      return;
+    }
+    if (!state.duration) return;
+    if (e.key === '1' || e.key === '2' || e.key === '3') {   // 全局按 1/2/3 也能计数
+      e.preventDefault();
+      addOne(e.key);
+      return;
+    }
+    var sg = state.segments[state.cur];
+    switch (e.key) {
+      case ' ':
+        e.preventDefault();
+        togglePlay();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        if (sg) video.currentTime = clamp(video.currentTime - 5, sg.start, sg.end - 0.03);
+        hidePrompt();
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        if (sg) video.currentTime = clamp(video.currentTime + 5, sg.start, sg.end - 0.03);
+        hidePrompt();
+        break;
+      case 'n': case 'N':
+        goNext();
+        break;
+      case 'p': case 'P':
+        goPrev();
+        break;
+      case 'b': case 'B':
+        setBreakpoint(video.currentTime);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        stepSpeed(1);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        stepSpeed(-1);
+        break;
+      case '+': case '=':
+        e.preventDefault();
+        zoomTo(state.zoom + 0.5);
+        break;
+      case '-': case '_':
+        e.preventDefault();
+        zoomTo(state.zoom - 0.5);
+        break;
+      case '0':
+        resetView();
+        break;
+      default: break;
+    }
+  });
+
+  /* ---------------- 初始化 ---------------- */
+  buildTally();
+  loadTally();
+  loadTally2();
+  renderTally();
+  renderModelButtons();
+  setTimeout(checkModel, 400);
+  setSpeed(1);
+  setLoaded(false);
+  renderList();
+  updateBars();
+  window.addEventListener('resize', function () { renderTimeline(); applyView(); });
+})();
+</script>
+</body>
+</html>
